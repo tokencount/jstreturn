@@ -49,3 +49,15 @@ def pool() -> asyncpg.Pool:
     if _pool is None:
         raise RuntimeError("DB pool not initialised")
     return _pool
+
+
+def db_url_status() -> dict:
+    """Debug helper: return info about DATABASE_URL for diagnostics."""
+    dsn = os.environ.get("DATABASE_URL", "")
+    return {
+        "set": bool(dsn),
+        "len": len(dsn),
+        "prefix": dsn[:30] + "..." if len(dsn) > 30 else dsn,
+        "has_ssl": "ssl=" in dsn,
+        "host": (dsn.split("@")[-1].split("/")[0] if "@" in dsn else "?"),
+    }

@@ -47,10 +47,16 @@ app.include_router(cron.router)
 @app.get("/healthz")
 async def healthz():
     try:
-        from app.db import pool
+        from app.db import db_url_status, pool
+        info = db_url_status()
+        if not info["set"]:
+            return JSONResponse(
+                {"ok": False, "error": "DATABASE_URL not set", "info": info},
+                status_code=503,
+            )
         async with pool().acquire() as conn:
             v = await conn.fetchval("SELECT 1")
-        return {"ok": True, "db": v == 1}
+        return {"ok": True, "db": v == 1, "info": info}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=503)
 
