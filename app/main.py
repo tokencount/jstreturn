@@ -23,10 +23,16 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_pool()
-    log.info("DB pool ready")
+    try:
+        await init_pool()
+        log.info("DB pool ready")
+    except Exception as e:
+        log.exception("DB pool init failed; service will keep running but /healthz will report DB down")
     yield
-    await close_pool()
+    try:
+        await close_pool()
+    except Exception:
+        pass
     log.info("DB pool closed")
 
 
