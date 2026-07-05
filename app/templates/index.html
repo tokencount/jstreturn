@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>jstreturn · 次品维修配件管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .status-PENDING { color: #dc2626; }
+    .status-READY { color: #16a34a; }
+    .status-COMPLETED { color: #6b7280; }
+    .dot-PENDING { background: #dc2626; }
+    .dot-READY { background: #16a34a; }
+    .dot-COMPLETED { background: #6b7280; }
+    [x-cloak] { display: none !important; }
+    .tab-active { border-bottom-color: #2563eb; color: #2563eb; font-weight: 600; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+<div x-data="app()" x-init="init()" x-cloak class="max-w-6xl mx-auto p-4 sm:p-6">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-2">
+      <span class="text-2xl">🔧</span>
+      <h1 class="text-xl sm:text-2xl font-bold">jstreturn</h1>
+      <span class="text-xs text-slate-500 hidden sm:inline">次品维修配件管理 · v0.1.0</span>
+    </div>
+    <div class="text-sm">
+      <template x-if="!user">
+        <button @click="showLogin=true" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm">登录</button>
+      </template>
+      <template x-if="user">
+        <div class="flex items-center gap-2">
+          <span class="text-slate-600" x-text="user.name + ' (' + user.role + ')'"></span>
+          <button @click="logout()" class="px-2 py-1 rounded bg-slate-200 text-xs">退出</button>
+        </div>
+      </template>
+    </div>
+  </header>
+
+  <!-- Login modal -->
+  <div x-show="showLogin" x-transition class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" @click.self="showLogin=false">
+    <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
+      <h2 class="text-lg font-semibold mb-4">登录</h2>
+      <form @submit.prevent="login()">
+        <label class="block text-sm text-slate-600 mb-1">姓名</label>
+        <input x-model="loginForm.name" class="w-full border rounded-lg px-3 py-2 mb-3" placeholder="zhangsan" required />
+        <label class="block text-sm text-slate-600 mb-1">Token (Cc 提供)</label>
+        <input x-model="loginForm.token" type="password" class="w-full border rounded-lg px-3 py-2 mb-4" required />
+        <div x-show="loginError" class="text-red-600 text-sm mb-3" x-text="loginError"></div>
+        <div class="flex justify-end gap-2">
+          <button type="button" @click="showLogin=false" class="px-3 py-1.5 rounded-lg bg-slate-100">取消</button>
+          <button type="submit" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white">登录</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Counts -->
+  <div class="grid grid-cols-3 gap-3 mb-6">
+    <div class="bg-white rounded-xl border p-4">
+      <div class="text-xs text-slate-500">PENDING</div>
+      <div class="text-2xl font-bold status-PENDING" x-text="counts.PENDING || 0"></div>
+    </div>
+    <div class="bg-white rounded-xl border p-4">
+      <div class="text-xs text-slate-500">READY</div>
+      <div class="text-2xl font-bold status-READY" x-text="counts.READY || 0"></div>
+    </div>
+    <div class="bg-white rounded-xl border p-4">
+      <div class="text-xs text-slate-500">COMPLETED</div>
+      <div class="text-2xl font-bold status-COMPLETED" x-text="counts.COMPLETED || 0"></div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex border-b mb-4 text-sm">
+    <button @click="tab='create'" :class="tab==='create' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">📝 录入</button>
+    <button @click="tab='ready';loadList('READY')" :class="tab==='ready' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">🟢 READY</button>
+    <button @click="tab='pending';loadList('PENDING')" :class="tab==='pending' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">🔴 PENDING</button>
+    <button @click="tab='history';loadList('COMPLETED')" :class="tab==='history' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">📜 历史</button>
+    <button @click="tab='inventory'" :class="tab==='inventory' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent ml-auto">📤 库存</button>
+  </div>
+
+  <!-- CREATE TAB -->
+  <section x-show="tab==='create'" class="bg-white rounded-2xl border p-5">
+    <div x-show="!user || !['returns','admin'].includes(user.role)" class="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+      ⚠ 录入需要 returns / admin 角色。
+    </div>
+    <form x-show="user && ['returns','admin'].includes(user.role)" @submit.prevent="submitDefective()">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm text-slate-600">Pallet No.</label>
+          <input x-model="form.pallet_no" required class="w-full border rounded-lg px-3 py-2 mt-1" />
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">Product Name</label>
+          <input x-model="form.product_name" class="w-full border rounded-lg px-3 py-2 mt-1" />
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">SKU</label>
+          <input x-model="form.sku" required class="w-full border rounded-lg px-3 py-2 mt-1" />
+        </div>
+        <div>
+          <label class="text-sm text-slate-600">Qty</label>
+          <input x-model.number="form.qty" type="number" min="1" required class="w-full border rounded-lg px-3 py-2 mt-1" />
+        </div>
+      </div>
+
+      <h3 class="mt-5 mb-2 font-semibold">配件明细</h3>
+      <template x-for="(p, idx) in form.parts" :key="idx">
+        <div class="grid grid-cols-12 gap-2 mb-2">
+          <input x-model="p.part_code" placeholder="part_code" class="col-span-4 border rounded-lg px-3 py-2" required />
+          <input x-model="p.part_name" placeholder="part_name" class="col-span-4 border rounded-lg px-3 py-2" />
+          <input x-model.number="p.qty" type="number" min="1" placeholder="qty" class="col-span-3 border rounded-lg px-3 py-2" required />
+          <button type="button" @click="form.parts.splice(idx,1)" class="col-span-1 text-red-600" x-show="form.parts.length>1">✕</button>
+        </div>
+      </template>
+      <button type="button" @click="form.parts.push({part_code:'',part_name:'',qty:1})" class="mt-1 text-sm text-blue-600">+ 加一行</button>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button type="button" @click="resetForm()" class="px-4 py-2 rounded-lg bg-slate-100">重置</button>
+        <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 text-white">提交</button>
+      </div>
+      <div x-show="submitMsg" class="mt-3 text-sm" :class="submitOk ? 'text-green-600' : 'text-red-600'" x-text="submitMsg"></div>
+    </form>
+  </section>
+
+  <!-- LIST TABS (READY / PENDING / HISTORY) -->
+  <section x-show="['ready','pending','history'].includes(tab)" class="space-y-3">
+    <template x-for="it in items" :key="it.id">
+      <div class="bg-white rounded-2xl border p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <span :class="'inline-block w-2 h-2 rounded-full dot-' + it.status"></span>
+              <span class="font-semibold">#<span x-text="it.id"></span></span>
+              <span class="font-mono text-sm" x-text="it.pallet_no"></span>
+              <span class="text-slate-500 text-sm" x-text="it.sku"></span>
+              <span class="text-slate-500 text-sm" x-text="'×' + it.qty"></span>
+            </div>
+            <div class="text-xs text-slate-500 mt-1">
+              <span x-text="it.product_name"></span>
+              <span x-show="it.created_by_name">· 登记 <span x-text="it.created_by_name"></span></span>
+              <span x-show="it.completed_at">· 完成 <span x-text="it.completed_by_name"></span> · <span x-text="it.completed_at"></span></span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs px-2 py-1 rounded-full"
+                  :class="it.status==='PENDING' ? 'bg-red-100 text-red-700' : it.status==='READY' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'"
+                  x-text="it.status"></span>
+            <button x-show="it.status==='READY' && user && ['repair','admin'].includes(user.role)"
+                    @click="complete(it.id)" class="text-sm px-3 py-1.5 rounded-lg bg-green-600 text-white">完成</button>
+          </div>
+        </div>
+
+        <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+          <template x-for="p in (it.parts || [])" :key="p.part_code">
+            <div class="flex justify-between border-b border-slate-100 py-1">
+              <span><span class="font-mono" x-text="p.part_code"></span> <span class="text-slate-500" x-text="p.part_name"></span></span>
+              <span :class="p.short>0 ? 'text-red-600' : 'text-green-600'">
+                需 <span x-text="p.need"></span> · 有 <span x-text="p.have"></span>
+                <span x-show="p.short>0"> · 缺 <b x-text="p.short"></b></span>
+              </span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+    <div x-show="items.length===0" class="text-center text-slate-400 py-10">暂无数据</div>
+  </section>
+
+  <!-- INVENTORY TAB -->
+  <section x-show="tab==='inventory'" class="bg-white rounded-2xl border p-5">
+    <div x-show="!user || user.role!=='admin'" class="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
+      ⚠ 上传库存需要 admin 角色。
+    </div>
+    <div x-show="user && user.role==='admin'">
+      <p class="text-sm text-slate-600 mb-3">CSV 列名（大小写不敏感，可任意顺序）：<br>
+        <code class="text-xs">part_code, part_name, on_hand_qty, location</code><br>
+        也支持中文列名：编码 / 配件编码、名称 / 配件名称、库存 / 在库数量、位置 / 库位
+      </p>
+      <input type="file" accept=".csv" @change="uploadInventory($event)" class="mb-3" />
+      <div x-show="uploadMsg" class="text-sm" x-text="uploadMsg"></div>
+      <p class="text-xs text-slate-500 mt-4">📌 JST 库存接口尚未对接，目前是手动 CSV 上传。Cc 教了以后会改成自动同步。</p>
+    </div>
+  </section>
+
+</div>
+
+<script>
+function app() {
+  return {
+    user: null,
+    showLogin: false,
+    loginForm: { name: '', token: '' },
+    loginError: '',
+    tab: 'create',
+    counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
+    items: [],
+    form: this.emptyForm(),
+    submitMsg: '',
+    submitOk: false,
+    uploadMsg: '',
+
+    emptyForm() {
+      return {
+        pallet_no: '', product_name: '', sku: '', qty: 1,
+        parts: [{ part_code: '', part_name: '', qty: 1 }],
+      };
+    },
+
+    async init() {
+      // try session
+      try {
+        const r = await fetch('/api/auth/me', { credentials: 'include' });
+        if (r.ok) this.user = await r.json();
+      } catch (e) {}
+      this.loadCounts();
+      // auto-refresh every 30s
+      setInterval(() => this.loadCounts(), 30000);
+    },
+
+    async api(path, opts = {}) {
+      const r = await fetch(path, {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+        ...opts,
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || r.statusText);
+      }
+      return r.json();
+    },
+
+    async login() {
+      this.loginError = '';
+      try {
+        const u = await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) });
+        this.user = u;
+        this.showLogin = false;
+        this.loginForm = { name: '', token: '' };
+      } catch (e) {
+        this.loginError = e.message || '登录失败';
+      }
+    },
+
+    async logout() {
+      await this.api('/api/auth/logout', { method: 'POST' });
+      this.user = null;
+    },
+
+    async loadCounts() {
+      try {
+        const all = await this.api('/api/defectives?limit=500');
+        const c = { PENDING: 0, READY: 0, COMPLETED: 0 };
+        for (const it of all) c[it.status] = (c[it.status] || 0) + 1;
+        this.counts = c;
+      } catch (e) {}
+    },
+
+    async loadList(status) {
+      try {
+        this.items = await this.api('/api/defectives?status=' + status + '&limit=200');
+      } catch (e) {}
+    },
+
+    async submitDefective() {
+      this.submitMsg = '';
+      try {
+        const r = await this.api('/api/defectives', { method: 'POST', body: JSON.stringify(this.form) });
+        this.submitMsg = '✓ 登记成功 #' + r.id + ' (' + r.status + ')';
+        this.submitOk = true;
+        this.resetForm();
+        this.loadCounts();
+      } catch (e) {
+        this.submitMsg = '✗ ' + (e.message || '失败');
+        this.submitOk = false;
+      }
+    },
+
+    resetForm() { this.form = this.emptyForm(); },
+
+    async complete(id) {
+      if (!confirm('确认完成 #' + id + '？')) return;
+      try {
+        await this.api('/api/defectives/' + id + '/complete', { method: 'POST' });
+        this.loadList(this.tab === 'history' ? 'COMPLETED' : this.tab.toUpperCase());
+        this.loadCounts();
+      } catch (e) { alert(e.message || '失败'); }
+    },
+
+    async uploadInventory(ev) {
+      const f = ev.target.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append('file', f);
+      try {
+        const r = await fetch('/api/inventory/upload', { method: 'POST', body: fd, credentials: 'include' });
+        const data = await r.json();
+        this.uploadMsg = r.ok ? '✓ 入库 ' + data.inserted + ' 行' : '✗ ' + (data.detail || JSON.stringify(data));
+      } catch (e) {
+        this.uploadMsg = '✗ ' + e.message;
+      }
+      ev.target.value = '';
+    },
+  };
+}
+</script>
+<script defer src="https://unpkg.com/alpinejs@3.14.1/dist/cdn.min.js"></script>
+</body>
+</html>
