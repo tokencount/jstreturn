@@ -17,7 +17,6 @@
       justify-content: center;
       padding: 1rem;
     }
-    [x-cloak] { display: none !important; }
     .card {
       width: 100%;
       max-width: 24rem;
@@ -60,63 +59,57 @@
       border-radius: .5rem;
       font-size: .875rem;
       margin-bottom: .85rem;
+      display: none;
     }
-    .ok {
-      background: #dcfce7;
-      color: #166534;
-      padding: .5rem .75rem;
-      border-radius: .5rem;
-      font-size: .875rem;
-      margin-bottom: .85rem;
-    }
+    .err.show { display: block; }
     .hint { font-size: .75rem; color: #64748b; margin: -.5rem 0 .85rem; }
   </style>
 </head>
 <body>
-  <div x-data="loginApp()" x-init="init()" x-cloak class="card">
+  <div class="card">
     <h1><span class="emoji">🔧</span>jstreturn</h1>
     <p style="margin:0 0 1rem; color:#64748b; font-size:.875rem;">登录次品维修配件管理系统</p>
 
-    <form @submit.prevent="login()" novalidate>
+    <form id="login-form" novalidate>
       <label>姓名</label>
-      <input x-model="form.name" placeholder="admin / zhangsan" required autocomplete="username" />
+      <input id="name" placeholder="admin / zhangsan" required autocomplete="username" />
 
       <label>Token</label>
-      <input x-model="form.token" type="password" required placeholder="login token" autocomplete="current-password" />
+      <input id="token" type="password" required placeholder="login token" autocomplete="current-password" />
       <p class="hint">首次登录任意姓名都会自动建账号（库空时首个用户为 admin）</p>
 
-      <div x-show="error" class="err" x-text="error"></div>
-      <button type="submit" :disabled="submitting" x-text="submitting ? '登录中…' : '登 录'"></button>
+      <div id="err" class="err" role="alert"></div>
+      <button id="submit-btn" type="submit">登 录</button>
     </form>
   </div>
 
   <script>
-    {% raw %}
-function loginApp() {
-  return {
-    form: { name: '', token: '' },
-    submitting: false,
-    error: '',
-
-    async init() {
-      // If already logged in, jump straight to the app.
+    // No frameworks. Pure DOM + fetch. Works in every browser.
+    // If already logged in, jump to the app immediately.
+    (async function () {
       try {
-        const r = await fetch('/api/auth/me', { credentials: 'include' });
-        if (r.ok) {
-          window.location.replace('/');
-        }
+        const r = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
+        if (r.ok) { window.location.replace('/'); return; }
       } catch (e) {}
-    },
+    })();
 
-    async login() {
-      this.error = '';
-      const name = (this.form.name || '').trim();
-      const token = (this.form.token || '').trim();
-      if (!name || !token) {
-        this.error = '请填写姓名和 token';
-        return;
+    document.getElementById('login-form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const token = document.getElementById('token').value.trim();
+      const errEl = document.getElementById('err');
+      const btn = document.getElementById('submit-btn');
+
+      function showError(msg) {
+        errEl.textContent = msg;
+        errEl.classList.add('show');
       }
-      this.submitting = true;
+      errEl.classList.remove('show');
+
+      if (!name || !token) { showError('请填写姓名和 token'); return; }
+
+      btn.disabled = true;
+      btn.textContent = '登录中…';
       try {
         const r = await fetch('/api/auth/login', {
           method: 'POST',
@@ -126,22 +119,20 @@ function loginApp() {
         });
         if (!r.ok) {
           let msg = '登录失败';
-          try { const t = await r.json(); msg = t.detail || JSON.stringify(t) || msg; }
+          try { const t = await r.json(); msg = (t && t.detail) || msg; }
           catch (e) { msg = r.statusText || msg; }
-          this.error = msg;
+          showError(msg);
+          btn.disabled = false;
+          btn.textContent = '登 录';
           return;
         }
-        // success → go to app
         window.location.replace('/');
-      } catch (e) {
-        this.error = e.message || '网络错误';
-      } finally {
-        this.submitting = false;
+      } catch (err) {
+        showError(err.message || '网络错误');
+        btn.disabled = false;
+        btn.textContent = '登 录';
       }
-    },
-  };
-}
-    {% endraw %}
+    });
   </script>
 </body>
 </html>
