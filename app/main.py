@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import close_pool, init_pool
-from app.routers import auth, cron, defectives, inventory, users
+from app.routers import auth, cron, defectives, imports, inventory, users
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("jstreturn")
@@ -47,6 +47,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(defectives.router)
+app.include_router(imports.router)
 app.include_router(inventory.router)
 app.include_router(cron.router)
 

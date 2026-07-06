@@ -265,6 +265,7 @@
         <button @click="tab='history';loadList('COMPLETED')" :class="tab==='history' && 'active'" class="tab-btn">📜 历史</button>
         <button @click="tab='inventory';loadSummary()" :class="tab==='inventory' && 'active'" class="tab-btn right">📤 库存</button>
         <button x-show="user && user.role==='admin'" @click="tab='users';loadUsers()" :class="tab==='users' && 'active'" class="tab-btn">⚙ 账号</button>
+        <button x-show="['returns','admin'].includes(user.role)" @click="tab='import'" :class="tab==='import' && 'active'" class="tab-btn">📥 批量导入</button>
       </div>
 
       <!-- CREATE TAB -->
@@ -465,6 +466,65 @@
         </div>
       </div>
 
+      <!-- IMPORT TAB -->
+      <div x-show="tab==='import'" class="panel">
+        <h2 style="font-size:1.1rem; margin:0 0 .5rem;">📥 批量导入退件单</h2>
+        <p style="font-size:.875rem; color:var(--fg-3); margin:0 0 .75rem;">
+          一个 CSV 文件，多张退件单。同一张 <code>pallet_no</code> 多行 = 多配件。
+          <a href="/api/imports/template" @click.prevent="downloadTemplate()" style="color:var(--brand); margin-left:.35rem;">📄 下載模板</a>
+        </p>
+
+        <div style="background:var(--amber-bg); padding:.65rem .85rem; border-radius:.5rem; font-size:.85rem; color:var(--amber); margin-bottom:1rem;">
+          ⚠  CSV 列：<b>pallet_no, product_name, sku, qty, part_code, part_name, part_qty</b><br>
+          示例：3 张退件单 × 不同 SKU/配件各自几行 → 上传后生成 <b>3 张 defective_item</b>
+        </div>
+
+        <div class="split-actions" style="margin-bottom:1rem;">
+          <label class="btn btn-primary" style="cursor:pointer;">
+            📂 选择 CSV 文件
+            <input type="file" accept=".csv,.txt" @change="uploadImport($event)" style="display:none;" />
+          </label>
+          <span x-show="importingFile" style="align-self:center; font-size:.85rem; color:var(--fg-3);">上传中…</span>
+        </div>
+
+        <div x-show="importResult" class="alert" :class="importResult && importResult.summary.failed === 0 && importResult.summary.parse_failures_count === 0 ? 'alert-ok' : (importResult.summary.succeeded === 0 ? 'alert-bad' : 'alert-warn')">
+          <template x-if="importResult">
+            <div>
+              <div style="font-weight:600;">
+                <span x-text="importResult.summary.succeeded"></span> / <span x-text="importResult.summary.submitted_tickets"></span> 张成功 ·
+                <span x-text="importResult.summary.failed"></span> 败 ·
+                <span x-text="importResult.summary.parse_failures_count"></span> 行无效
+                (header 检测: <span x-text="importResult.summary.header_detected ? '是' : '否'"></span>)
+              </div>
+              <div x-show="importResult.successes.length" style="margin-top:.5rem;">
+                <b>✓ 成功：</b>
+                <span style="font-family:ui-monospace,monospace;">
+                  <template x-for="s in importResult.successes" :key="s.id">
+                    <span style="margin-right:.5rem;">#<span x-text="s.id"></span> <span x-text="s.status"></span> (<span x-text="s.pallet"></span>)</span>
+                  </template>
+                </span>
+              </div>
+              <div x-show="importResult.failures.length" style="margin-top:.5rem;">
+                <b>✗ 败：</b>
+                <ul style="margin:0; padding-left:1.25rem;">
+                  <template x-for="f in importResult.failures" :key="f.pallet">
+                    <li style="font-size:.85rem;"><span x-text="f.pallet"></span> → <span x-text="f.error"></span></li>
+                  </template>
+                </ul>
+              </div>
+              <div x-show="importResult.parse_failures_sample.length" style="margin-top:.5rem;">
+                <b>⚠ 解析失败样本：</b>
+                <ul style="margin:0; padding-left:1.25rem;">
+                  <template x-for="p in importResult.parse_failures_sample" :key="p.line">
+                    <li style="font-size:.85rem;">第 <span x-text="p.line"></span> 行 → <span x-text="p.reason"></span></li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- USERS TAB (admin) -->
       <div x-show="tab==='users'" class="panel">
         <h2 style="font-size:1.1rem; margin:0 0 .5rem;">⚙ 账号管理</h2>
@@ -576,6 +636,8 @@ function app() {
     userCreateMsg: '',
     userCreateOk: false,
     tokenInfo: null,
+    importResult: null,
+    importingFile: false,
 
     async init() {
       try {
@@ -819,7 +881,6 @@ function app() {
      * Copy the currently-active ticket's parts to ALL other tickets.
      * Useful when many pallets share the same repair parts list.
      */
-    copyActiveToAll() {
       const src = this.form.headers[this.activeHeader];
       if (!src) return;
       const cloned = (src.parts || [])
@@ -869,6 +930,58 @@ function app() {
         this.uploadMsg = '✗ ' + e.message;
       }
       ev.target.value = '';
+    },
+
+    async uploadImport(ev) {
+      const f = ev.target.files[0];
+      if (!f) return;
+      this.importingFile = true;
+      this.importResult = null;
+      const fd = new FormData();
+      fd.append('file', f);
+      try {
+        const r = await fetch('/api/imports/defectives', { method: 'POST', body: fd, credentials: 'include' });
+        const data = await r.json();
+        if (!r.ok) {
+          this.importResult = {
+            summary: { failed: 1, parse_failures_count: 0, header_detected: false, succeeded: 0, submitted_tickets: 0, submitted_rows: 0 },
+            successes: [],
+            failures: [{ pallet: '—', error: (data && data.detail) || JSON.stringify(data) || ('HTTP ' + r.status) }],
+            parse_failures_sample: [],
+          };
+        } else {
+          this.importResult = data;
+          this.loadCounts();
+        }
+      } catch (e) {
+        this.importResult = {
+          summary: { failed: 1, parse_failures_count: 0, header_detected: false, succeeded: 0, submitted_tickets: 0, submitted_rows: 0 },
+          successes: [],
+          failures: [{ pallet: '—', error: e.message || '网络错误' }],
+          parse_failures_sample: [],
+        };
+      } finally {
+        this.importingFile = false;
+        ev.target.value = '';
+      }
+    },
+
+    async downloadTemplate() {
+      try {
+        const r = await fetch('/api/imports/template', { credentials: 'include' });
+        const text = await r.text();
+        const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'defectives_template.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        alert('下载失败: ' + (e.message || ''));
+      }
     },
   };
 }
