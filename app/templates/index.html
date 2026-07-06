@@ -134,6 +134,61 @@
     .hidden { display: none !important; }
     .gap-sm { gap: .5rem; }
 
+    /* Two-pane layout: header info on the left, parts on the right */
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+    .split-pane {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: .75rem;
+      padding: .75rem .85rem 1rem;
+    }
+    .split-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: .5rem;
+      font-weight: 600;
+      font-size: .9rem;
+    }
+    .split-count {
+      font-size: .75rem;
+      color: var(--fg-3);
+      font-weight: 500;
+    }
+    .split-actions {
+      display: flex;
+      gap: .35rem;
+      flex-wrap: wrap;
+      margin-top: .55rem;
+    }
+    .split-actions .btn { padding: .35rem .65rem; font-size: .8rem; }
+    .split-hint {
+      margin: .55rem 0 0;
+      font-size: .72rem;
+      color: var(--fg-3);
+      line-height: 1.5;
+    }
+    .split-footer {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    .split-footer-summary { font-size: .8rem; color: var(--fg-3); }
+    .split-footer-summary b { color: var(--fg); }
+    .split-footer-actions { display: flex; gap: .5rem; }
+    @media (max-width: 720px) {
+      .split { grid-template-columns: 1fr; }
+    }
+
     /* Sheet-style editable rows */
     .sheet { border: 1px solid var(--line); border-radius: .5rem; overflow: hidden; background: #fff; }
     .sheet-header,
@@ -216,65 +271,90 @@
         </div>
         <form x-show="['returns','admin'].includes(user.role)" @submit.prevent="submitDefective()">
 
-          <!-- Header info (one row, applies to all parts) -->
-          <h3 style="margin: 0 0 .5rem; font-size: 1rem;">① 退件信息</h3>
-          <div class="form-grid-4" style="grid-template-columns: 1fr 1.5fr 1fr .75fr;">
-            <div>
-              <label>Pallet No.</label>
-              <input x-model="form.pallet_no" required placeholder="PLT-001" />
-            </div>
-            <div>
-              <label>Product Name</label>
-              <input x-model="form.product_name" placeholder="Product description (optional)" />
-            </div>
-            <div>
-              <label>SKU</label>
-              <input x-model="form.sku" required placeholder="SKU-001" />
-            </div>
-            <div>
-              <label>Qty</label>
-              <input x-model.number="form.qty" type="number" min="1" required />
-            </div>
-          </div>
+          <!-- Two side-by-side sheets. Left: header info, Right: parts. -->
+          <div class="split">
 
-          <!-- Parts sheet (multi-row, like a spreadsheet) -->
-          <h3 style="margin: 1.5rem 0 .5rem; font-size: 1rem; display:flex; align-items:center; justify-content:space-between;">
-            <span>② 配件明细（可以一次加多行）</span>
-            <span style="font-size:.75rem; color:var(--fg-3); font-weight:400;">
-              <span x-text="form.parts.length"></span> 行 · Tab 跳到下一行 · Enter 确认
-            </span>
-          </h3>
-
-          <div class="sheet">
-            <div class="sheet-header">
-              <div style="width:3rem;">#</div>
-              <div style="flex:2;">part_code</div>
-              <div style="flex:2;">part_name</div>
-              <div style="flex:1;">qty</div>
-              <div style="width:3rem;"></div>
-            </div>
-            <template x-for="(p, idx) in form.parts" :key="idx">
-              <div class="sheet-row">
-                <div style="width:3rem; color:var(--fg-3); font-size:.85rem; text-align:center;" x-text="idx + 1"></div>
-                <input style="flex:2;" x-model="p.part_code" :data-idx="idx" data-field="part_code" placeholder="part_code" required class="cell" />
-                <input style="flex:2;" x-model="p.part_name" :data-idx="idx" data-field="part_name" placeholder="part_name" class="cell" />
-                <input style="flex:1;" x-model.number="p.qty" type="number" min="1" :data-idx="idx" data-field="qty" placeholder="qty" required class="cell" />
-                <button type="button" @click="form.parts.splice(idx,1)" :disabled="form.parts.length<=1" class="cell-btn" title="删除这一行">✕</button>
+            <!-- LEFT: header info (multi-row too, so Cc can register many tickets at once) -->
+            <div class="split-pane">
+              <div class="split-title">
+                <span>① 退件信息</span>
+                <span class="split-count"><span x-text="form.headers.length"></span> 票</span>
               </div>
-            </template>
+
+              <div class="sheet">
+                <div class="sheet-header">
+                  <div style="width:1.6rem;">#</div>
+                  <div style="flex:1.4;">Pallet No.</div>
+                  <div style="flex:2;">Product Name</div>
+                  <div style="flex:1;">SKU</div>
+                  <div style="width:3.5rem;">Qty</div>
+                  <div style="width:2rem;"></div>
+                </div>
+                <template x-for="(h, idx) in form.headers" :key="idx">
+                  <div class="sheet-row">
+                    <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center;" x-text="idx + 1"></div>
+                    <input style="flex:1.4;" x-model="h.pallet_no" placeholder="PLT-001" class="cell" />
+                    <input style="flex:2;" x-model="h.product_name" placeholder="(optional)" class="cell" />
+                    <input style="flex:1;" x-model="h.sku" placeholder="SKU-001" class="cell" />
+                    <input style="width:3.5rem;" x-model.number="h.qty" type="number" min="1" placeholder="1" class="cell" />
+                    <button type="button" @click="form.headers.splice(idx,1)" :disabled="form.headers.length<=1" class="cell-btn">✕</button>
+                  </div>
+                </template>
+              </div>
+
+              <div class="split-actions">
+                <button type="button" @click="form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1})" class="btn">+ 加一票</button>
+                <button type="button" @click="form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1});" class="btn">+ 加 3 票</button>
+              </div>
+              <p class="split-hint">
+                填 <b>第 1 行</b> 的 Pallet No / Product / SKU / Qty（必填），余可空。提交时每个 <b>有 Pallet No 的行</b>会生成一张独立的退件单。
+              </p>
+            </div>
+
+            <!-- RIGHT: parts (single ticket, multi-line) -->
+            <div class="split-pane">
+              <div class="split-title">
+                <span>② 配件明细</span>
+                <span class="split-count"><span x-text="form.parts.length"></span> 行</span>
+              </div>
+
+              <div class="sheet">
+                <div class="sheet-header">
+                  <div style="width:1.6rem;">#</div>
+                  <div style="flex:2;">part_code</div>
+                  <div style="flex:2;">part_name</div>
+                  <div style="width:3.5rem;">qty</div>
+                  <div style="width:2rem;"></div>
+                </div>
+                <template x-for="(p, idx) in form.parts" :key="idx">
+                  <div class="sheet-row">
+                    <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center;" x-text="idx + 1"></div>
+                    <input style="flex:2;" x-model="p.part_code" placeholder="part_code" class="cell" />
+                    <input style="flex:2;" x-model="p.part_name" placeholder="part_name" class="cell" />
+                    <input style="width:3.5rem;" x-model.number="p.qty" type="number" min="1" placeholder="qty" class="cell" />
+                    <button type="button" @click="form.parts.splice(idx,1)" :disabled="form.parts.length<=1" class="cell-btn">✕</button>
+                  </div>
+                </template>
+              </div>
+
+              <div class="split-actions">
+                <button type="button" @click="form.parts.push({part_code:'',part_name:'',qty:1})" class="btn">+ 加一行</button>
+                <button type="button" @click="form.parts.push({part_code:'',part_name:'',qty:1}); form.parts.push({part_code:'',part_name:'',qty:1}); form.parts.push({part_code:'',part_name:'',qty:1});" class="btn">+ 加 3 行</button>
+                <button type="button" @click="pasteFromClipboard()" class="btn" title="从剪贴板（Excel/Google Sheets 复制）粘贴">📋 粘贴</button>
+              </div>
+              <p class="split-hint">
+                所有配件行 <b>共享给左边每一张退件单</b>。如果要按票分组，告诉我们，我们再加 “按 pallet 分组” 模式。
+              </p>
+            </div>
           </div>
 
-          <div style="margin-top:.75rem; display:flex; gap:.5rem;">
-            <button type="button" @click="form.parts.push({part_code:'',part_name:'',qty:1})" class="btn">+ 加一行</button>
-            <button type="button" @click="form.parts.push({part_code:'',part_name:'',qty:1}); form.parts.push({part_code:'',part_name:'',qty:1}); form.parts.push({part_code:'',part_name:'',qty:1})" class="btn">+ 加 3 行</button>
-            <button type="button" @click="pasteFromClipboard()" class="btn" title="从剪贴板（Excel/Google Sheets 复制）粘贴">📋 粘贴</button>
-          </div>
-
-          <div style="margin-top: 1.5rem; display:flex; justify-content:space-between; gap:.5rem; align-items:center;">
-            <span style="font-size:.85rem; color:var(--fg-3);">
-              <span x-text="form.parts.length"></span> 个配件 · 总需 <b x-text="form.parts.reduce((s,p) => s + (Number(p.qty)||0), 0)"></b> 件
+          <div class="split-footer">
+            <span class="split-footer-summary">
+              <span x-text="form.headers.length"></span> 个退件单 ×
+              <span x-text="form.parts.length"></span> 行配件 · 总需
+              <b x-text="form.parts.reduce((s,p) => s + (Number(p.qty)||0), 0) * (form.headers.filter(h=>(h.pallet_no||'').trim()).length || 1)"></b> 件
             </span>
-            <div style="display:flex; gap:.5rem;">
+            <div class="split-footer-actions">
               <button type="button" @click="resetForm()" class="btn">重置</button>
               <button type="submit" class="btn btn-primary">提交</button>
             </div>
@@ -450,7 +530,10 @@ function app() {
     tab: 'create',
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
-    form: { pallet_no: '', product_name: '', sku: '', qty: 1, parts: [{ part_code: '', part_name: '', qty: 1 }] },
+    form: {
+      headers: [{ pallet_no: '', product_name: '', sku: '', qty: 1 }],
+      parts: [{ part_code: '', part_name: '', qty: 1 }],
+    },
     submitMsg: '',
     submitOk: false,
     uploadMsg: '',
@@ -580,7 +663,27 @@ function app() {
 
     async submitDefective() {
       this.submitMsg = '';
-      // basic validation
+      // Pull all non-empty header rows (must have pallet_no at minimum).
+      const headers = (this.form.headers || []).filter(h => (h.pallet_no || '').trim());
+      if (headers.length === 0) {
+        this.submitMsg = '✗ 至少填 1 张退件单的 Pallet No.';
+        this.submitOk = false;
+        return;
+      }
+      // Validate every header has sku + qty ≥1.
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        if (!(h.sku || '').trim()) {
+          this.submitMsg = `✗ 第 ${i + 1} 票缺 SKU`;
+          this.submitOk = false;
+          return;
+        }
+        if (!(Number(h.qty) > 0)) {
+          this.submitMsg = `✗ 第 ${i + 1} 票 Qty 需 > 0`;
+          this.submitOk = false;
+          return;
+        }
+      }
       const rows = this.form.parts.filter(p => (p.part_code || '').trim());
       if (rows.length === 0) {
         this.submitMsg = '✗ 至少 1 行配件';
@@ -592,22 +695,40 @@ function app() {
         part_name: (p.part_name || '').trim() || null,
         qty: Number(p.qty) || 1,
       }));
-      // Send all parts (server enforces min=1)
-      const payload = {
-        pallet_no: (this.form.pallet_no || '').trim(),
-        product_name: (this.form.product_name || '').trim() || null,
-        sku: (this.form.sku || '').trim(),
-        qty: Number(this.form.qty) || 1,
-        parts: cleanParts,
-      };
-      try {
-        const r = await this.api('/api/defectives', { method: 'POST', body: JSON.stringify(payload) });
-        this.submitMsg = '✓ 登记成功 #' + r.id + ' (' + r.status + ') · ' + cleanParts.length + ' 个配件';
+
+      // POST each header sequentially to /api/defectives.
+      const successes = [];
+      const failures = [];
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        const payload = {
+          pallet_no: (h.pallet_no || '').trim(),
+          product_name: (h.product_name || '').trim() || null,
+          sku: (h.sku || '').trim(),
+          qty: Number(h.qty) || 1,
+          parts: cleanParts,
+        };
+        try {
+          const r = await this.api('/api/defectives', { method: 'POST', body: JSON.stringify(payload) });
+          successes.push({ id: r.id, status: r.status, pallet: payload.pallet_no, sku: payload.sku });
+        } catch (e) {
+          failures.push({ pallet: payload.pallet_no, sku: payload.sku, error: e.message || '失败' });
+        }
+      }
+
+      if (failures.length === 0) {
+        this.submitMsg = `✓ 成功登记 ${successes.length} 张退件单（${cleanParts.length} 配件/单）` +
+          (successes.length <= 6 ? '：' + successes.map(s => `#${s.id} ${s.status}`).join('、') : '');
         this.submitOk = true;
         this.resetForm();
         this.loadCounts();
-      } catch (e) {
-        this.submitMsg = '✗ ' + (e.message || '失败');
+      } else if (successes.length === 0) {
+        this.submitMsg = '✗ 全部失败：' + failures.map(f => `${f.pallet} → ${f.error}`).join('；');
+        this.submitOk = false;
+      } else {
+        this.submitMsg = `⚠ 部分成功 ${successes.length}/${successes.length + failures.length}：` +
+          successes.map(s => `#${s.id}`).join('、') + '；失败：' +
+          failures.map(f => `${f.pallet}→${f.error}`).join('；');
         this.submitOk = false;
       }
     },
@@ -656,7 +777,10 @@ function app() {
     },
 
     resetForm() {
-      this.form = { pallet_no: '', product_name: '', sku: '', qty: 1, parts: [{ part_code: '', part_name: '', qty: 1 }] };
+      this.form = {
+        headers: [{ pallet_no: '', product_name: '', sku: '', qty: 1 }],
+        parts: [{ part_code: '', part_name: '', qty: 1 }],
+      };
     },
 
     async complete(id) {
