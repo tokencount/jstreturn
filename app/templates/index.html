@@ -291,7 +291,7 @@
 function app() {
   return {
     user: null,
-    showLogin: false,
+    showLogin: true,
     loginForm: { name: '', token: '' },
     loginError: '',
     tab: 'create',
@@ -320,7 +320,10 @@ function app() {
     async init() {
       try {
         const r = await fetch('/api/auth/me', { credentials: 'include' });
-        if (r.ok) this.user = await r.json();
+        if (r.ok) {
+          this.user = await r.json();
+          this.showLogin = false;  // already logged in, hide modal
+        }
       } catch (e) {}
       this.loadCounts();
       setInterval(() => this.loadCounts(), 30000);
