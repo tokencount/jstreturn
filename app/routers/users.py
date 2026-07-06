@@ -52,18 +52,30 @@ async def create_user(
         raise HTTPException(400, f"role must be one of {ROLES}")
 
     async with pool().acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO users (name, role, active, telegram_id)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (name) DO UPDATE
-              SET role = EXCLUDED.role,
-                  active = EXCLUDED.active,
-                  telegram_id = EXCLUDED.telegram_id
-            RETURNING id, name, role, active, telegram_id, created_at
-            """,
-            payload.name, payload.role, payload.active, payload.telegram_id,
+        # If a user with this name exists (case-insensitive), update; else insert.
+        existing = await conn.fetchrow(
+            "SELECT id FROM users WHERE LOWER(name) = LOWER($1)",
+            payload.name,
         )
+        if existing:
+            row = await conn.fetchrow(
+                """
+                UPDATE users
+                SET role = $1, active = $2, telegram_id = $3
+                WHERE id = $4
+                RETURNING id, name, role, active, telegram_id, created_at
+                """,
+                payload.role, payload.active, payload.telegram_id, existing["id"],
+            )
+        else:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO users (name, role, active, telegram_id)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id, name, role, active, telegram_id, created_at
+                """,
+                payload.name, payload.role, payload.active, payload.telegram_id,
+            )
         await conn.execute(
             """
             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)

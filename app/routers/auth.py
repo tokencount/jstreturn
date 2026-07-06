@@ -10,6 +10,7 @@ v1 self-bootstrapping:
 """
 from __future__ import annotations
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
@@ -49,18 +50,18 @@ async def login(payload: LoginIn, response: Response):
 
         if row is None:
             # Bootstrapping: first-ever user becomes admin.
-            count = await conn.fetchval("SELECT COUNT(*) FROM users")
-            role = "admin" if count == 0 else "returns"
-            row = await conn.fetchrow(
-                """
-                INSERT INTO users (name, role, active)
-                VALUES ($1, $2, TRUE)
-                ON CONFLICT (name) DO NOTHING
-                RETURNING id, name, role, active
-                """,
-                name, role,
-            )
-            if row is None:
+            count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+            role = "admin" if int(count) == 0 else "returns"
+            try:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO users (name, role, active)
+                    VALUES ($1, $2, TRUE)
+                    RETURNING id, name, role, active
+                    """,
+                    name, role,
+                )
+            except asyncpg.UniqueViolationError:
                 # Race: another request created them; re-read.
                 row = await conn.fetchrow(
                     "SELECT id, name, role, active FROM users WHERE LOWER(name)=LOWER($1)",
