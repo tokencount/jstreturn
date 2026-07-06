@@ -1,4 +1,9 @@
-"""Inventory upload (CSV). Placeholder until JST integration is built."""
+"""Inventory upload (CSV).
+
+Full-replace semantics: upload wipes the inventory_snapshot table and inserts
+the rows from the CSV. After the wipe + reload, every PENDING/READY defective
+item is re-evaluated so new stock levels are reflected immediately.
+"""
 from __future__ import annotations
 
 import csv
@@ -10,6 +15,7 @@ from pydantic import BaseModel
 
 from app.auth import require_role
 from app.db import pool
+from app.matcher import evaluate_status
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -29,7 +35,8 @@ async def upload_csv(
     """Upload JST inventory CSV. Expected columns (case-insensitive, flexible order):
         part_code, part_name, on_hand_qty, location
 
-    Full replace semantics: rows in CSV become the new snapshot.
+    Full replace semantics: rows in CSV become the new snapshot, then every
+    defective item is re-evaluated against the fresh stock.
     """
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(400, "must be .csv")
@@ -38,12 +45,11 @@ async def upload_csv(
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = raw.decode("gb18030", errors="replace")  # JST is often Excel-exported GBK
+        text = raw.decode("gb18030", errors="replace")
 
     reader = csv.DictReader(io.StringIO(text))
     if not reader.fieldnames:
         raise HTTPException(400, "empty CSV")
-    # normalise headers: lower-case, strip
     field_map = {f.lower().strip(): f for f in reader.fieldnames}
 
     def col(*names: str) -> Optional[str]:
@@ -85,7 +91,6 @@ async def upload_csv(
     async with pool().acquire() as conn:
         async with conn.transaction():
             await conn.execute("TRUNCATE inventory_snapshot")
-            # batch insert
             await conn.executemany(
                 """
                 INSERT INTO inventory_snapshot (part_code, part_name, on_hand_qty, location)
@@ -101,7 +106,28 @@ async def upload_csv(
                 user["id"], f'{{"rows": {len(rows)}}}',
             )
 
-    return {"inserted": len(rows)}
+    # Re-evaluate every PENDING/READY defective against the fresh stock
+    async with pool().acquire() as conn:
+        rows_to_eval = await conn.fetch(
+            "SELECT id, status FROM defective_items WHERE status IN ('PENDING','READY')"
+        )
+    reevaluated = 0
+    status_flip = {"to_pending": 0, "to_ready": 0}
+    for r in rows_to_eval:
+        prev = r["status"]
+        new_status = await evaluate_status(r["id"])
+        if new_status != prev:
+            if new_status == "PENDING":
+                status_flip["to_pending"] += 1
+            elif new_status == "READY":
+                status_flip["to_ready"] += 1
+        reevaluated += 1
+
+    return {
+        "inserted": len(rows),
+        "reevaluated": reevaluated,
+        "status_flip": status_flip,
+    }
 
 
 @router.get("/summary")
@@ -117,3 +143,24 @@ async def summary(user: dict = Depends(require_role("admin", "repair"))):
             """
         )
     return dict(row) if row else {"sku_count": 0, "total_units": 0, "last_updated": None}
+
+
+@router.get("/preview/{part_code}")
+async def preview_one(
+    part_code: str,
+    user: dict = Depends(require_role("admin", "repair", "returns")),
+):
+    """Look up a part_code (use this for ad-hoc repair queries)."""
+    async with pool().acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT part_code, part_name, on_hand_qty, location, updated_at
+            FROM inventory_snapshot WHERE part_code = $1
+            """,
+            part_code,
+        )
+    if row is None:
+        raise HTTPException(404, f"no inventory for {part_code!r}")
+    d = dict(row)
+    d["updated_at"] = d["updated_at"].isoformat() if d["updated_at"] else None
+    return d

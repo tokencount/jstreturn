@@ -46,9 +46,10 @@
       <h2 class="text-lg font-semibold mb-4">登录</h2>
       <form @submit.prevent="login()">
         <label class="block text-sm text-slate-600 mb-1">姓名</label>
-        <input x-model="loginForm.name" class="w-full border rounded-lg px-3 py-2 mb-3" placeholder="zhangsan" required />
-        <label class="block text-sm text-slate-600 mb-1">Token (Cc 提供)</label>
-        <input x-model="loginForm.token" type="password" class="w-full border rounded-lg px-3 py-2 mb-4" required />
+        <input x-model="loginForm.name" class="w-full border rounded-lg px-3 py-2 mb-3" placeholder="admin / zhangsan" required />
+        <label class="block text-sm text-slate-600 mb-1">Token</label>
+        <input x-model="loginForm.token" type="password" class="w-full border rounded-lg px-3 py-2 mb-2" required />
+        <p class="text-xs text-slate-500 mb-3">首次登录任意姓名都会自动建账号（库空时首个用户为 admin）</p>
         <div x-show="loginError" class="text-red-600 text-sm mb-3" x-text="loginError"></div>
         <div class="flex justify-end gap-2">
           <button type="button" @click="showLogin=false" class="px-3 py-1.5 rounded-lg bg-slate-100">取消</button>
@@ -75,12 +76,13 @@
   </div>
 
   <!-- Tabs -->
-  <div class="flex border-b mb-4 text-sm">
+  <div class="flex flex-wrap border-b mb-4 text-sm">
     <button @click="tab='create'" :class="tab==='create' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">📝 录入</button>
     <button @click="tab='ready';loadList('READY')" :class="tab==='ready' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">🟢 READY</button>
     <button @click="tab='pending';loadList('PENDING')" :class="tab==='pending' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">🔴 PENDING</button>
     <button @click="tab='history';loadList('COMPLETED')" :class="tab==='history' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">📜 历史</button>
-    <button @click="tab='inventory'" :class="tab==='inventory' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent ml-auto">📤 库存</button>
+    <button @click="tab='inventory';loadSummary()" :class="tab==='inventory' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent ml-auto">📤 库存</button>
+    <button x-show="user && user.role==='admin'" @click="tab='users';loadUsers()" :class="tab==='users' && 'tab-active'" class="px-4 py-2 border-b-2 border-transparent">⚙ 账号</button>
   </div>
 
   <!-- CREATE TAB -->
@@ -172,7 +174,7 @@
   </section>
 
   <!-- INVENTORY TAB -->
-  <section x-show="tab==='inventory'" class="bg-white rounded-2xl border p-5">
+  <section x-show="tab==='inventory'" class="bg-white rounded-2xl border p-5 space-y-4">
     <div x-show="!user || user.role!=='admin'" class="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg">
       ⚠ 上传库存需要 admin 角色。
     </div>
@@ -181,9 +183,105 @@
         <code class="text-xs">part_code, part_name, on_hand_qty, location</code><br>
         也支持中文列名：编码 / 配件编码、名称 / 配件名称、库存 / 在库数量、位置 / 库位
       </p>
+      <p class="text-xs text-amber-700 bg-amber-50 p-2 rounded-lg mb-3">
+        ⚠ 上传后 <b>清空旧库存 + 写入新库存</b>。所有 PENDING/READY 配件状态会自动重新评估（READY ↔ PENDING）。
+      </p>
       <input type="file" accept=".csv" @change="uploadInventory($event)" class="mb-3" />
       <div x-show="uploadMsg" class="text-sm" x-text="uploadMsg"></div>
-      <p class="text-xs text-slate-500 mt-4">📌 JST 库存接口尚未对接，目前是手动 CSV 上传。Cc 教了以后会改成自动同步。</p>
+      <p class="text-xs text-slate-500 mt-4">📌 JST 库存接口尚未对接，目前是手动 CSV 上传。</p>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3 pt-4 border-t">
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-slate-500">SKU 数</div>
+        <div class="text-2xl font-bold" x-text="invSummary.sku_count || 0"></div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-slate-500">总库存</div>
+        <div class="text-2xl font-bold" x-text="invSummary.total_units || 0"></div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-3">
+        <div class="text-xs text-slate-500">最近更新</div>
+        <div class="text-sm font-mono text-slate-700" x-text="invSummary.last_updated || '—'"></div>
+      </div>
+    </div>
+
+    <div class="pt-4 border-t">
+      <h3 class="font-semibold mb-2">查一个配件库存</h3>
+      <div class="flex gap-2">
+        <input x-model="lookupCode" placeholder="part_code" class="flex-1 border rounded-lg px-3 py-2" />
+        <button @click="lookupInventory()" class="px-3 py-2 rounded-lg bg-slate-200">查</button>
+      </div>
+      <div x-show="lookupResult" class="mt-2 text-sm font-mono bg-slate-50 p-2 rounded-lg" x-text="lookupResult"></div>
+    </div>
+  </section>
+
+  <!-- USERS TAB (admin) -->
+  <section x-show="tab==='users'" class="bg-white rounded-2xl border p-5 space-y-5">
+    <div>
+      <h2 class="text-lg font-semibold mb-3">⚙ 账号管理</h2>
+      <p class="text-sm text-slate-500 mb-3">创建账号，分配角色（returns 录入 / repair 维修 / admin 全权）。</p>
+
+      <form @submit.prevent="createUser()" class="grid grid-cols-12 gap-2 items-end">
+        <div class="col-span-4">
+          <label class="text-xs text-slate-600">姓名</label>
+          <input x-model="userForm.name" required class="w-full border rounded-lg px-3 py-2 mt-1" placeholder="e.g. wangmei" />
+        </div>
+        <div class="col-span-3">
+          <label class="text-xs text-slate-600">角色</label>
+          <select x-model="userForm.role" class="w-full border rounded-lg px-3 py-2 mt-1">
+            <option value="returns">returns（退件登记）</option>
+            <option value="repair">repair（维修）</option>
+            <option value="admin">admin（管理）</option>
+          </select>
+        </div>
+        <div class="col-span-3">
+          <label class="text-xs text-slate-600">Telegram user_id（可选）</label>
+          <input x-model.number="userForm.telegram_id" type="number" class="w-full border rounded-lg px-3 py-2 mt-1" />
+        </div>
+        <div class="col-span-2">
+          <button type="submit" class="w-full px-3 py-2 rounded-lg bg-blue-600 text-white">创建</button>
+        </div>
+      </form>
+      <div x-show="userCreateMsg" class="mt-2 text-sm" :class="userCreateOk ? 'text-green-600' : 'text-red-600'" x-text="userCreateMsg"></div>
+    </div>
+
+    <div class="pt-4 border-t">
+      <h3 class="font-semibold mb-2">现有账号</h3>
+      <table class="w-full text-sm">
+        <thead class="text-xs text-slate-500 border-b">
+          <tr><th class="text-left py-2">ID</th><th class="text-left py-2">姓名</th><th class="text-left py-2">角色</th><th class="text-left py-2">状态</th><th class="text-left py-2">Telegram</th><th class="text-left py-2">创建</th><th></th></tr>
+        </thead>
+        <tbody>
+          <template x-for="u in users" :key="u.id">
+            <tr class="border-b">
+              <td class="py-2" x-text="u.id"></td>
+              <td class="py-2 font-mono" x-text="u.name"></td>
+              <td class="py-2">
+                <select :value="u.role" @change="updateUserRole(u.id, $event.target.value)" class="border rounded px-2 py-1 text-xs">
+                  <option value="returns">returns</option>
+                  <option value="repair">repair</option>
+                  <option value="admin">admin</option>
+                </select>
+              </td>
+              <td class="py-2">
+                <span :class="u.active ? 'text-green-600' : 'text-slate-400'" x-text="u.active ? 'active' : 'inactive'"></span>
+              </td>
+              <td class="py-2 text-xs text-slate-500" x-text="u.telegram_id || '—'"></td>
+              <td class="py-2 text-xs text-slate-500" x-text="(u.created_at || '').slice(0, 10)"></td>
+              <td class="py-2 text-right">
+                <button @click="showToken(u.name)" class="text-xs px-2 py-1 rounded bg-slate-100 mr-1">Token</button>
+                <button x-show="u.active" @click="deactivateUser(u.id, u.name)" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700">禁用</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <div x-show="tokenInfo" class="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+        <div><b x-text="tokenInfo.name"></b> 的登录 Token：</div>
+        <div class="font-mono bg-white p-2 mt-1 rounded" x-text="tokenInfo.token"></div>
+        <div class="text-xs text-slate-500 mt-1">把这个 Token 给当事人，让他们直接登录。</div>
+      </div>
     </div>
   </section>
 
@@ -203,6 +301,14 @@ function app() {
     submitMsg: '',
     submitOk: false,
     uploadMsg: '',
+    invSummary: { sku_count: 0, total_units: 0, last_updated: null },
+    lookupCode: '',
+    lookupResult: '',
+    users: [],
+    userForm: { name: '', role: 'returns', telegram_id: null },
+    userCreateMsg: '',
+    userCreateOk: false,
+    tokenInfo: null,
 
     emptyForm() {
       return {
@@ -212,13 +318,11 @@ function app() {
     },
 
     async init() {
-      // try session
       try {
         const r = await fetch('/api/auth/me', { credentials: 'include' });
         if (r.ok) this.user = await r.json();
       } catch (e) {}
       this.loadCounts();
-      // auto-refresh every 30s
       setInterval(() => this.loadCounts(), 30000);
     },
 
@@ -267,6 +371,67 @@ function app() {
       } catch (e) {}
     },
 
+    async loadSummary() {
+      try { this.invSummary = await this.api('/api/inventory/summary'); } catch (e) {}
+    },
+
+    async lookupInventory() {
+      if (!this.lookupCode) return;
+      try {
+        const r = await this.api('/api/inventory/preview/' + encodeURIComponent(this.lookupCode));
+        this.lookupResult = `${r.part_code} · 有 ${r.on_hand_qty} · ${r.location || '—'} · ${r.part_name || ''}`;
+      } catch (e) {
+        this.lookupResult = '✗ ' + e.message;
+      }
+    },
+
+    async loadUsers() {
+      try { this.users = await this.api('/api/users'); } catch (e) { this.users = []; }
+    },
+
+    async createUser() {
+      this.userCreateMsg = '';
+      try {
+        const r = await this.api('/api/users', { method: 'POST', body: JSON.stringify(this.userForm) });
+        this.userCreateMsg = '✓ 已创建/更新 #' + r.id + ' (' + r.role + ')';
+        this.userCreateOk = true;
+        this.userForm.name = ''; this.userForm.telegram_id = null;
+        await this.loadUsers();
+      } catch (e) {
+        this.userCreateMsg = '✗ ' + (e.message || '失败');
+        this.userCreateOk = false;
+      }
+    },
+
+    async updateUserRole(id, role) {
+      try {
+        await this.api('/api/users/' + id, { method: 'PATCH', body: JSON.stringify({ role }) });
+        await this.loadUsers();
+      } catch (e) {
+        alert(e.message || '失败');
+        this.loadUsers();
+      }
+    },
+
+    async deactivateUser(id, name) {
+      if (!confirm('确认禁用 ' + name + '？')) return;
+      try {
+        await this.api('/api/users/' + id, { method: 'DELETE' });
+        await this.loadUsers();
+      } catch (e) {
+        alert(e.message || '失败');
+      }
+    },
+
+    async showToken(name) {
+      try {
+        const r = await this.api('/api/users/token-for/' + encodeURIComponent(name));
+        this.tokenInfo = r;
+      } catch (e) {
+        alert(e.message || '失败');
+      }
+    },
+
     async submitDefective() {
       this.submitMsg = '';
       try {
@@ -295,12 +460,23 @@ function app() {
     async uploadInventory(ev) {
       const f = ev.target.files[0];
       if (!f) return;
+      if (!confirm('上传后旧库存会被清空，所有 PENDING/READY 状态会重新评估。继续？')) {
+        ev.target.value = '';
+        return;
+      }
       const fd = new FormData();
       fd.append('file', f);
       try {
         const r = await fetch('/api/inventory/upload', { method: 'POST', body: fd, credentials: 'include' });
         const data = await r.json();
-        this.uploadMsg = r.ok ? '✓ 入库 ' + data.inserted + ' 行' : '✗ ' + (data.detail || JSON.stringify(data));
+        if (r.ok) {
+          this.uploadMsg = '✓ 入库 ' + data.inserted + ' 行，重新评估 ' + data.reevaluated + ' 条（' +
+                           data.status_flip.to_pending + ' → PENDING, ' +
+                           data.status_flip.to_ready + ' → READY）';
+          this.loadSummary();
+        } else {
+          this.uploadMsg = '✗ ' + (data.detail || JSON.stringify(data));
+        }
       } catch (e) {
         this.uploadMsg = '✗ ' + e.message;
       }
