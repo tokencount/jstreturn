@@ -70,7 +70,14 @@ async def healthz():
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "version": "0.1.0"},
-    )
+    try:
+        return templates.TemplateResponse(
+            request,
+            "index.html",
+            {"version": "0.1.0"},
+        )
+    except Exception as e:
+        log.exception("template render failed")
+        return JSONResponse(
+            {"error": "template_render_failed", "detail": str(e)}, status_code=500
+        )
