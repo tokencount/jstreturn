@@ -146,52 +146,13 @@
         <span class="small">次品维修配件管理 · v0.1.0</span>
       </div>
       <div class="row gap-sm">
-        <span x-show="!user" class="badge">未登录</span>
+        
         <span x-show="user" class="badge" x-text="user.name + ' (' + user.role + ')'"></span>
         <button x-show="user" @click="logout()" class="btn">退出</button>
       </div>
     </div>
 
-    <!-- Login modal (always-on by default; only closes after successful login) -->
-    <div x-show="showLogin" class="modal-back" style="display:flex;">
-      <div class="modal-card" @click.stop>
-        <h2>登录</h2>
-        <form @submit.prevent="login()">
-          <div class="input-block">
-            <label>姓名</label>
-            <input x-model="loginForm.name" placeholder="admin / zhangsan" required />
-          </div>
-          <div class="input-block">
-            <label>Token</label>
-            <input x-model="loginForm.token" type="password" required />
-            <small style="color:var(--fg-3); font-size:.75rem; display:block; margin-top:.25rem;">
-              首次登录任意姓名都会自动建账号（库空时首个用户为 admin）
-            </small>
-          </div>
-          <div x-show="loginError" class="alert alert-danger" x-text="loginError"></div>
-          <button type="submit" class="btn btn-primary btn-full">登录</button>
-        </form>
-      </div>
-    </div>
-
-    <!-- While logged in: full app -->
-    <div x-show="user" :class="user ? '' : 'hidden'">
-
-      <!-- Counts -->
-      <div class="counts">
-        <div class="count">
-          <div class="lbl">PENDING</div>
-          <div class="num PENDING" x-text="counts.PENDING || 0"></div>
-        </div>
-        <div class="count">
-          <div class="lbl">READY</div>
-          <div class="num READY" x-text="counts.READY || 0"></div>
-        </div>
-        <div class="count">
-          <div class="lbl">COMPLETED</div>
-          <div class="num COMPLETED" x-text="counts.COMPLETED || 0"></div>
-        </div>
-      </div>
+    
 
       <!-- Tabs -->
       <div class="tabs">
@@ -411,9 +372,6 @@ ${r?'Expression: "'+r+`"
 function app() {
   return {
     user: null,
-    showLogin: true,
-    loginForm: { name: '', token: '' },
-    loginError: '',
     tab: 'create',
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
@@ -435,9 +393,14 @@ function app() {
         const r = await fetch('/api/auth/me', { credentials: 'include' });
         if (r.ok) {
           this.user = await r.json();
-          this.showLogin = false;
+        } else {
+          window.location.replace('/login');
+          return;
         }
-      } catch (e) {}
+      } catch (e) {
+        window.location.replace('/login');
+        return;
+      }
       this.loadCounts();
       setInterval(() => this.loadCounts(), 30000);
     },
@@ -455,22 +418,9 @@ function app() {
       return r.json();
     },
 
-    async login() {
-      this.loginError = '';
-      try {
-        const u = await this.api('/api/auth/login', { method: 'POST', body: JSON.stringify(this.loginForm) });
-        this.user = u;
-        this.showLogin = false;
-        this.loginForm = { name: '', token: '' };
-      } catch (e) {
-        this.loginError = e.message || '登录失败';
-      }
-    },
-
     async logout() {
       await this.api('/api/auth/logout', { method: 'POST' });
-      this.user = null;
-      this.showLogin = true;
+      window.location.replace('/login');
     },
 
     async loadCounts() {

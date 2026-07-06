@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>jstreturn · 登录</title>
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+    html,body { margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    [x-cloak] { display: none !important; }
+    .card {
+      width: 100%;
+      max-width: 24rem;
+      background: #fff;
+      border-radius: 1rem;
+      padding: 1.75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 1.25rem; font-size: 1.4rem; font-weight: 700; display: flex; align-items: center; gap: .5rem; }
+    h1 .emoji { font-size: 1.6rem; }
+    label { display: block; font-size: .875rem; color: #475569; margin: 0 0 .25rem; }
+    input {
+      width: 100%;
+      padding: .6rem .75rem;
+      border: 1px solid #e2e8f0;
+      border-radius: .5rem;
+      font-family: inherit;
+      font-size: 1rem;
+      margin-bottom: .85rem;
+    }
+    input:focus { outline: 0; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+    button {
+      width: 100%;
+      padding: .75rem;
+      border: 0;
+      border-radius: .5rem;
+      background: #2563eb;
+      color: #fff;
+      font-family: inherit;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .err {
+      background: #fef2f2;
+      color: #b91c1c;
+      padding: .5rem .75rem;
+      border-radius: .5rem;
+      font-size: .875rem;
+      margin-bottom: .85rem;
+    }
+    .ok {
+      background: #dcfce7;
+      color: #166534;
+      padding: .5rem .75rem;
+      border-radius: .5rem;
+      font-size: .875rem;
+      margin-bottom: .85rem;
+    }
+    .hint { font-size: .75rem; color: #64748b; margin: -.5rem 0 .85rem; }
+  </style>
+</head>
+<body>
+  <div x-data="loginApp()" x-init="init()" x-cloak class="card">
+    <h1><span class="emoji">🔧</span>jstreturn</h1>
+    <p style="margin:0 0 1rem; color:#64748b; font-size:.875rem;">登录次品维修配件管理系统</p>
+
+    <form @submit.prevent="login()" novalidate>
+      <label>姓名</label>
+      <input x-model="form.name" placeholder="admin / zhangsan" required autocomplete="username" />
+
+      <label>Token</label>
+      <input x-model="form.token" type="password" required placeholder="login token" autocomplete="current-password" />
+      <p class="hint">首次登录任意姓名都会自动建账号（库空时首个用户为 admin）</p>
+
+      <div x-show="error" class="err" x-text="error"></div>
+      <button type="submit" :disabled="submitting" x-text="submitting ? '登录中…' : '登 录'"></button>
+    </form>
+  </div>
+
+  <script>
+    {% raw %}
+function loginApp() {
+  return {
+    form: { name: '', token: '' },
+    submitting: false,
+    error: '',
+
+    async init() {
+      // If already logged in, jump straight to the app.
+      try {
+        const r = await fetch('/api/auth/me', { credentials: 'include' });
+        if (r.ok) {
+          window.location.replace('/');
+        }
+      } catch (e) {}
+    },
+
+    async login() {
+      this.error = '';
+      const name = (this.form.name || '').trim();
+      const token = (this.form.token || '').trim();
+      if (!name || !token) {
+        this.error = '请填写姓名和 token';
+        return;
+      }
+      this.submitting = true;
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, token }),
+        });
+        if (!r.ok) {
+          let msg = '登录失败';
+          try { const t = await r.json(); msg = t.detail || JSON.stringify(t) || msg; }
+          catch (e) { msg = r.statusText || msg; }
+          this.error = msg;
+          return;
+        }
+        // success → go to app
+        window.location.replace('/');
+      } catch (e) {
+        this.error = e.message || '网络错误';
+      } finally {
+        this.submitting = false;
+      }
+    },
+  };
+}
+    {% endraw %}
+  </script>
+</body>
+</html>

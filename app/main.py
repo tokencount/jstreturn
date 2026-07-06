@@ -68,6 +68,18 @@ async def healthz():
         return JSONResponse({"ok": False, "error": str(e)}, status_code=503)
 
 
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """Serve the standalone login page (no modal, no app)."""
+    try:
+        return templates.TemplateResponse(request, "login.html", {})
+    except Exception as e:
+        log.exception("login template render failed")
+        return JSONResponse(
+            {"error": "template_render_failed", "detail": str(e)}, status_code=500
+        )
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
