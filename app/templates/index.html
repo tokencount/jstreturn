@@ -296,24 +296,24 @@
                   <div style="width:2rem;"></div>
                 </div>
                 <template x-for="(h, idx) in form.headers" :key="idx">
-                  <div class="sheet-row" :class="{ 'header-active': activeHeader === idx }"
-                       @click="activeHeader = idx" style="cursor:pointer;">
-                    <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center;" x-text="idx + 1"></div>
+                  <div class="sheet-row" :class="{ 'header-active': activeHeader === idx }" style="cursor:pointer;">
+                    <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center; padding:.5rem .25rem;" x-text="idx + 1"
+                         @mousedown="activeHeader = idx"></div>
                     <input style="flex:1.4;" x-model="h.pallet_no" placeholder="PLT-001" class="cell"
                            @focus="activeHeader = idx"
-                           @click.stop="activeHeader = idx" />
+                           @mousedown="activeHeader = idx" />
                     <input style="flex:2;" x-model="h.product_name" placeholder="(optional)" class="cell"
                            @focus="activeHeader = idx"
-                           @click.stop="activeHeader = idx" />
+                           @mousedown="activeHeader = idx" />
                     <input style="flex:1;" x-model="h.sku" placeholder="SKU-001" class="cell"
                            @focus="activeHeader = idx"
-                           @click.stop="activeHeader = idx"
+                           @mousedown="activeHeader = idx"
                            :class="{ 'cell-required': !(h.sku||'').trim() }" />
                     <input style="width:3.5rem;" x-model.number="h.qty" type="number" min="1" placeholder="1" class="cell"
                            @focus="activeHeader = idx"
-                           @click.stop="activeHeader = idx"
+                           @mousedown="activeHeader = idx"
                            :class="{ 'cell-required': !(Number(h.qty) > 0) }" />
-                    <button type="button" @click.stop="form.headers.splice(idx,1); if (activeHeader >= form.headers.length) activeHeader = form.headers.length - 1; else if (activeHeader > idx) activeHeader = activeHeader - 1" :disabled="form.headers.length<=1" class="cell-btn">✕</button>
+                    <button type="button" @click="form.headers.splice(idx,1); if (activeHeader >= form.headers.length) activeHeader = form.headers.length - 1; else if (activeHeader > idx) activeHeader = activeHeader - 1" :disabled="form.headers.length<=1" class="cell-btn">✕</button>
                   </div>
                 </template>
               </div>
