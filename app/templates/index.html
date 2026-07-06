@@ -295,27 +295,31 @@
                   <div style="width:2rem;"></div>
                 </div>
                 <template x-for="(h, idx) in form.headers" :key="idx">
-                  <div class="sheet-row" :class="{ 'header-active': activeHeader === idx }">
+                  <div class="sheet-row" :class="{ 'header-active': activeHeader === idx }"
+                       @click="activeHeader = idx" style="cursor:pointer;">
                     <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center;" x-text="idx + 1"></div>
                     <input style="flex:1.4;" x-model="h.pallet_no" placeholder="PLT-001" class="cell"
                            @focus="activeHeader = idx"
-                           @click="activeHeader = idx" />
+                           @click.stop="activeHeader = idx" />
                     <input style="flex:2;" x-model="h.product_name" placeholder="(optional)" class="cell"
-                           @focus="activeHeader = idx" />
+                           @focus="activeHeader = idx"
+                           @click.stop="activeHeader = idx" />
                     <input style="flex:1;" x-model="h.sku" placeholder="SKU-001" class="cell"
                            @focus="activeHeader = idx"
+                           @click.stop="activeHeader = idx"
                            :class="{ 'cell-required': !(h.sku||'').trim() }" />
                     <input style="width:3.5rem;" x-model.number="h.qty" type="number" min="1" placeholder="1" class="cell"
                            @focus="activeHeader = idx"
+                           @click.stop="activeHeader = idx"
                            :class="{ 'cell-required': !(Number(h.qty) > 0) }" />
-                    <button type="button" @click="form.headers.splice(idx,1); if (activeHeader >= form.headers.length) activeHeader = form.headers.length - 1" :disabled="form.headers.length<=1" class="cell-btn">✕</button>
+                    <button type="button" @click.stop="form.headers.splice(idx,1); if (activeHeader >= form.headers.length) activeHeader = form.headers.length - 1; else if (activeHeader > idx) activeHeader = activeHeader - 1" :disabled="form.headers.length<=1" class="cell-btn">✕</button>
                   </div>
                 </template>
               </div>
 
               <div class="split-actions">
-                <button type="button" @click="form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1})" class="btn">+ 加一票</button>
-                <button type="button" @click="form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1});" class="btn">+ 加 3 票</button>
+                <button type="button" @click="form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); activeHeader = form.headers.length - 1" class="btn">+ 加一票</button>
+                <button type="button" @click="form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); form.headers.push({pallet_no:'', product_name:'', sku:'', qty:1}); activeHeader = form.headers.length - 1;" class="btn">+ 加 3 票</button>
               </div>
               <p class="split-hint">
                 一行 = 一张退件单。点击某一行 → 右边会填出/编辑 <b>该票专属</b> 的配件。空行被跳过。
