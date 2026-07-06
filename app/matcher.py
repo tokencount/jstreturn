@@ -78,6 +78,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200)
         )
         SELECT
             di.id, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
+            di.location,
             di.created_at, di.completed_at,
             u_creator.name AS created_by_name,
             u_completer.name AS completed_by_name,

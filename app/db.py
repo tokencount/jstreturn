@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS public.defective_items (
     completed_by   INTEGER REFERENCES public.users(id),
     completed_at   TIMESTAMPTZ
 );
+-- Migration: add location (次品仓位) if missing. Idempotent.
+ALTER TABLE public.defective_items ADD COLUMN IF NOT EXISTS location TEXT;
+CREATE INDEX IF NOT EXISTS idx_def_location ON public.defective_items (location);
 CREATE INDEX IF NOT EXISTS idx_def_pallet  ON public.defective_items (pallet_no);
 CREATE INDEX IF NOT EXISTS idx_def_sku     ON public.defective_items (sku);
 CREATE INDEX IF NOT EXISTS idx_def_status  ON public.defective_items (status);

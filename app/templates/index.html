@@ -402,10 +402,12 @@
             <option value="mark_complete">✅ 标记完成（仅 repair/admin）</option>
             <option value="set_sku">🆎 改 SKU（仅 admin）</option>
             <option value="set_product_name">📝 改 Product Name（仅 admin）</option>
+            <option value="set_location">📍 改 仓位（仅 admin）</option>
             <option value="delete">🗑 删除（仅 admin）</option>
           </select>
           <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <input x-show="bulkAction === 'set_product_name'" x-model="bulkArg.product_name" placeholder="新 product_name" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <input x-show="bulkAction === 'set_location'" x-model="bulkArg.location" placeholder="新 仓位 / location" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <button class="btn btn-primary" @click="runBulkAction()" :disabled="!bulkAction || bulkBusy" x-text="bulkBusy ? '执行中…' : '执行'"></button>
           <button class="btn" @click="clearSelection()">清除选择</button>
           <span x-show="bulkResult" style="font-size:.85rem; color:var(--fg-2);" x-text="bulkResult"></span>
@@ -436,6 +438,7 @@
                   </div>
                   <div class="item-meta">
                     <span x-text="it.product_name"></span>
+                    <template x-if="it.location"><span>· 📍 <span class="mono" x-text="it.location"></span></span></template>
                     <template x-if="it.created_by_name"><span>· 登记 <span x-text="it.created_by_name"></span></span></template>
                     <template x-if="it.completed_at"><span>· 完成 <span x-text="it.completed_by_name"></span> · <span x-text="it.completed_at"></span></span></template>
                   </div>
@@ -507,8 +510,9 @@
         </p>
 
         <div style="background:var(--amber-bg); padding:.65rem .85rem; border-radius:.5rem; font-size:.85rem; color:var(--amber); margin-bottom:1rem;">
-          ⚠  CSV 列：<b>pallet_no, product_name, sku, qty, part_code, part_name, part_qty</b><br>
-          示例：3 张退件单 × 不同 SKU/配件各自几行 → 上传后生成 <b>3 张 defective_item</b>
+          ⚠  CSV 列认 <b>DATE, PALLET, 次品仓位, 商品名称, SKU, part_code, part_quantity</b>（你的实际格式）<br>
+          也认英文 <code>pallet_no, product_name, sku, qty, location, part_code, part_name, part_qty</code>。<br>
+          同 <b>pallet</b> 多行 = 同张单多 part。次品仓位 = 仓位 / location（存档后可批量修改）。
         </div>
 
         <div class="split-actions" style="margin-bottom:1rem;">
@@ -672,7 +676,7 @@ function app() {
     importingFile: false,
     selectedIds: new Set(),
     bulkAction: '',
-    bulkArg: { sku: '', product_name: '' },
+    bulkArg: { sku: '', product_name: '', location: '' },
     bulkBusy: false,
     bulkResult: '',
 
@@ -966,6 +970,7 @@ function app() {
       };
       if (this.bulkAction === 'set_sku') payload.sku = this.bulkArg.sku || '';
       if (this.bulkAction === 'set_product_name') payload.product_name = this.bulkArg.product_name || '';
+      if (this.bulkAction === 'set_location') payload.location = this.bulkArg.location || '';
       try {
         const r = await this.api('/api/defectives/bulk', { method: 'POST', body: JSON.stringify(payload) });
         const ok = (r.failures || []).length;

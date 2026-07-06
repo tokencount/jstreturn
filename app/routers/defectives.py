@@ -24,6 +24,7 @@ class PartIn(BaseModel):
 class DefectiveIn(BaseModel):
     pallet_no: str = Field(..., min_length=1, max_length=80)
     product_name: Optional[str] = None
+    location: Optional[str] = None
     sku: str = Field(..., min_length=1, max_length=80)
     qty: int = Field(..., gt=0)
     parts: list[PartIn] = Field(..., min_length=1)
@@ -38,11 +39,11 @@ async def create_defective(
         async with conn.transaction():
             di_id = await conn.fetchval(
                 """
-                INSERT INTO defective_items (pallet_no, product_name, sku, qty, created_by)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO defective_items (pallet_no, product_name, sku, qty, location, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
                 """,
-                payload.pallet_no, payload.product_name, payload.sku, payload.qty, user["id"],
+                payload.pallet_no, payload.product_name, payload.sku, payload.qty, payload.location, user["id"],
             )
             for p in payload.parts:
                 await conn.execute(
@@ -141,6 +142,8 @@ async def bulk_action(
         "recompute"                  re-evaluate status via inventory
         "mark_complete"              mark READY → COMPLETED  (require role repair/admin)
         "set_sku"        { sku }     change sku            (admin only)
+        "set_location"   { location } change 仓位          (admin only)
+        "set_product_name" { product_name }                (admin only)
         "set_product_name" { product_name }                (admin only)
         "delete"                    remove                (admin only)
       reason: str (optional) — recorded in audit_log
@@ -212,6 +215,21 @@ async def bulk_action(
                             VALUES ($1, 'bulk_set_sku', 'defective_item', $2, $3::jsonb)
                             """,
                             user["id"], did, f'{{"sku":"{new_sku}","reason":"{reason}"}}',
+                        )
+                    elif action == "set_location":
+                        if user["role"] != "admin":
+                            raise HTTPException(403, "admin only")
+                        new_loc = (payload.get("location") or "").strip() or None
+                        await conn.execute(
+                            "UPDATE defective_items SET location=$1 WHERE id=$2",
+                            new_loc, did,
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_set_location', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, f'{{"location":"{new_loc or ""}","reason":"{reason}"}}',
                         )
                     elif action == "set_product_name":
                         if user["role"] != "admin":
@@ -290,9 +308,10 @@ async def bulk_action(
 async def filter_list(
     user: dict = Depends(current_user),
     status: Optional[str] = Query(None, pattern="^(PENDING|READY|COMPLETED)$"),
-    q: Optional[str] = Query(None, description="substring against pallet_no/sku/product_name"),
+    q: Optional[str] = Query(None, description="substring against pallet_no/sku/product_name/location"),
     sku: Optional[str] = None,
     pallet: Optional[str] = None,
+    location: Optional[str] = Query(None, description="substring against 次品仓位"),
     is_pending: Optional[bool] = Query(None, description="if true, only those with at least one missing part"),
     limit: int = Query(500, ge=1, le=2000),
 ):
@@ -311,13 +330,20 @@ async def filter_list(
         like = f"%{q}%"
         args.append(like)
         iq = len(args)
-        where.append(f"(di.pallet_no ILIKE ${iq} OR di.sku ILIKE ${iq} OR di.product_name ILIKE ${iq})")
+        where.append(
+            f"(di.pallet_no ILIKE ${iq} OR di.sku ILIKE ${iq} "
+            f"OR di.product_name ILIKE ${iq} OR di.location ILIKE ${iq})"
+        )
     if sku:
         args.append(sku)
         where.append(f"di.sku = ${len(args)}")
     if pallet:
         args.append(pallet)
         where.append(f"di.pallet_no = ${len(args)}")
+    if location:
+        like = f"%{location}%"
+        args.append(like)
+        where.append(f"di.location ILIKE ${len(args)}")
     if is_pending:
         where.append(
             "EXISTS (SELECT 1 FROM defective_parts dp "
@@ -342,7 +368,7 @@ async def filter_list(
         )
         SELECT
             di.id, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
-            di.created_at, di.completed_at,
+            di.location, di.created_at, di.completed_at,
             u_creator.name AS created_by_name,
             u_completer.name AS completed_by_name,
             pa.parts

@@ -102,7 +102,7 @@ async def upload_defectives(
     if has_header:
         # normalize headers
         headers = [c.lower().strip() for c in rows[0]]
-        n = max(len(headers), 7)
+        n = max(len(headers), 8)
         # pad
         if len(headers) < n:
             headers = headers + [""] * (n - len(headers))
@@ -110,17 +110,26 @@ async def upload_defectives(
         def col(*aliases):
             return _find_col(headers, *aliases)
 
-        pallet_idx = col("pallet_no", "pallet", "pltn", "pltn0", "退件号", "板号") or 0
-        prod_idx = col("product_name", "product", "name", "产品名称", "商品名称") or 1
-        sku_idx = col("sku", "model", "型号") or 2
-        qty_idx = col("qty", "quantity", "数量", "qty_main") or 3
-        part_idx = col("part_code", "part", "编码", "配件编码", "jst_code") or 4
-        part_name_idx = col("part_name", "配件名称") or 5
-        part_qty_idx = col("part_qty", "qty_part", "part_quantity", "配件数量") or 6
+        # Cc's spreadsheet columns (uppercased keys handled below).
+        #   DATE        | PALLET | 次品仓位 | 商品名称 | SKU | part_code | part_quantity
+        # Header detection uses lowercased headers, so we accept both cases.
+        pallet_idx = col("pallet_no", "pallet", "pltn", "pltn0", "退件号", "板号", "pallet no.", "pallet no") or 1
+        prod_idx = col("product_name", "product", "name", "产品名称", "商品名称", "产品") or 3
+        sku_idx = col("sku", "model", "型号") or 4
+        # part_quantity might be labelled differently
+        part_qty_idx = col("part_qty", "qty_part", "part_quantity", "配件数量", "quantity", "qty") or 7
+        qty_idx = col("qty", "quantity", "数量", "qty_main")  # ticket qty (default to 1)
+        # qty default to 1 when no header detected; if no header col, leave None.
+        if qty_idx is None:
+            qty_idx = part_qty_idx
+        location_idx = col("location", "次品仓位", "仓位", "warehouse", "loc", "位置")
+        part_idx = col("part_code", "part", "编码", "配件编码", "jst_code", "part code")
+        part_name_idx = col("part_name", "配件名称", "name_part")
     else:
         # Canonical positional order
-        pallet_idx, prod_idx, sku_idx, qty_idx = 0, 1, 2, 3
-        part_idx, part_name_idx, part_qty_idx = 4, 5, 6
+        pallet_idx, prod_idx, sku_idx, qty_idx = 1, 3, 4, 6
+        part_idx, part_name_idx, part_qty_idx = 6, 5, 7
+        location_idx = 2
 
     # Convert each data row to a structured dict.
     parsed = []
@@ -154,6 +163,7 @@ async def upload_defectives(
             "part_code": part_code,
             "part_name": at(part_name_idx) or None,
             "part_qty": part_qty,
+            "location": at(location_idx) if location_idx is not None else None,
             "_line": line_no,
         })
 
@@ -167,12 +177,19 @@ async def upload_defectives(
         sku = items[0]["sku"]
         product_name = items[0]["product_name"]
         qty = items[0]["qty"]
+        location = items[0]["location"]
         parts = [{
             "part_code": it["part_code"],
             "part_name": it["part_name"],
             "qty": it["part_qty"],
         } for it in items]
-        tickets[pallet] = {"sku": sku, "product_name": product_name, "qty": qty, "parts": parts}
+        tickets[pallet] = {
+            "sku": sku,
+            "product_name": product_name,
+            "qty": qty,
+            "location": location,
+            "parts": parts,
+        }
 
     # Now INSERT per ticket, transaction-safe per ticket.
     successes = []
@@ -187,11 +204,11 @@ async def upload_defectives(
                 async with conn.transaction():
                     di_id = await conn.fetchval(
                         """
-                        INSERT INTO defective_items (pallet_no, product_name, sku, qty, created_by)
-                        VALUES ($1, $2, $3, $4, $5)
+                        INSERT INTO defective_items (pallet_no, product_name, sku, qty, location, created_by)
+                        VALUES ($1, $2, $3, $4, $5, $6)
                         RETURNING id
                         """,
-                        pallet, t["product_name"], t["sku"], t["qty"], user["id"],
+                        pallet, t["product_name"], t["sku"], t["qty"], t["location"], user["id"],
                     )
                     for p in t["parts"]:
                         await conn.execute(
@@ -238,12 +255,18 @@ async def upload_defectives(
 
 @router.get("/template")
 async def template_csv(user: dict = Depends(require_role("returns", "admin"))):
-    """Return a CSV template the user can download."""
+    """Return a CSV template the user can download.
+
+    Column header styles supported:
+      - DATE/PALLET/次品仓位/商品名称/SKU/part_code/part_quantity (Cc's spreadsheet layout)
+      - pallet_no/product_name/sku/qty/part_code/part_name/part_qty (canonical English)
+      - 退件号/产品名称/型号/编码/配件名称/配件数量 (Chinese aliases)
+    """
     csv_text = (
-        "pallet_no,product_name,sku,qty,part_code,part_name,part_qty\n"
-        "PLT-001,示例产品-A,SKU-A1,2,P-CODE-1,配件一,1\n"
-        "PLT-001,示例产品-A,SKU-A1,2,P-CODE-2,配件二,1\n"
-        "PLT-002,示例产品-B,SKU-B1,1,P-CODE-1,配件一,1\n"
+        "DATE,PALLET,次品仓位,商品名称,SKU,part_code,part_quantity\n"
+        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-1,1\n"
+        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-2,1\n"
+        "13/6/2026,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,P-CODE-3,2\n"
     )
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
