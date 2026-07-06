@@ -17,10 +17,18 @@ _pool: asyncpg.Pool | None = None
 
 
 # Idempotent schema for any tables that may be missing.
-# Mirrors docs/schema.sql but does NOT depend on pg_dump-specific SQL.
-SCHEMA_SQL = """
-CREATE TYPE IF NOT EXISTS public.defective_status AS ENUM ('PENDING', 'READY', 'COMPLETED');
+# Mirrors docs/schema.sql but uses DO blocks for the ENUM (since CREATE TYPE
+# IF NOT EXISTS isn't supported on PostgreSQL enum types).
+ENUM_DO = """
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'defective_status') THEN
+        CREATE TYPE public.defective_status AS ENUM ('PENDING','READY','COMPLETED');
+    END IF;
+END $$;
+"""
 
+TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS public.users (
     id           SERIAL PRIMARY KEY,
     telegram_id  BIGINT UNIQUE,
@@ -106,9 +114,11 @@ async def init_pool() -> asyncpg.Pool:
             command_timeout=30,
             ssl=ssl_required,
         )
-        # Apply any missing schema.
+        # Apply any missing schema, splitting the ENUM DO block from table DDL
+        # so an enum already existing doesn't abort the rest of the migration.
         async with _pool.acquire() as conn:
-            await conn.execute(SCHEMA_SQL)
+            await conn.execute(ENUM_DO)
+            await conn.execute(TABLE_SQL)
             log.info("schema bootstrap applied (idempotent CREATE … IF NOT EXISTS)")
     return _pool
 
