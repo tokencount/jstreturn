@@ -390,23 +390,55 @@
         </form>
       </div>
 
-      <!-- LIST TABS -->
+      <!-- LIST TABS (READY / PENDING / HISTORY) -->
       <div x-show="['ready','pending','history'].includes(tab)" class="row-list">
+
+        <!-- Bulk-action bar -->
+        <div x-show="selectedIds.size > 0" style="display:flex; flex-wrap:wrap; gap:.5rem; padding:.65rem .85rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.5rem; align-items:center; margin-bottom:.5rem;">
+          <span style="font-weight:600;">已选 <span x-text="selectedIds.size"></span> 项</span>
+          <select x-model="bulkAction" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;">
+            <option value="">— 选动作 —</option>
+            <option value="recompute">🔄 重算状态（按当前库存）</option>
+            <option value="mark_complete">✅ 标记完成（仅 repair/admin）</option>
+            <option value="set_sku">🆎 改 SKU（仅 admin）</option>
+            <option value="set_product_name">📝 改 Product Name（仅 admin）</option>
+            <option value="delete">🗑 删除（仅 admin）</option>
+          </select>
+          <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <input x-show="bulkAction === 'set_product_name'" x-model="bulkArg.product_name" placeholder="新 product_name" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <button class="btn btn-primary" @click="runBulkAction()" :disabled="!bulkAction || bulkBusy" x-text="bulkBusy ? '执行中…' : '执行'"></button>
+          <button class="btn" @click="clearSelection()">清除选择</button>
+          <span x-show="bulkResult" style="font-size:.85rem; color:var(--fg-2);" x-text="bulkResult"></span>
+        </div>
+
+        <!-- Filter row -->
+        <div style="display:flex; gap:.5rem; margin-bottom:.5rem; align-items:center;">
+          <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='ready' ? 'background:#dcfce7;color:#166534;' : ''">🟢 <a href="#" @click.prevent="tab='ready';loadList('READY')" style="text-decoration:none;color:inherit;">READY</a></span>
+          <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='pending' ? 'background:#fee2e2;color:#991b1b;' : ''">🔴 <a href="#" @click.prevent="tab='pending';loadList('PENDING')" style="text-decoration:none;color:inherit;">PENDING</a></span>
+          <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='history' ? 'background:#f1f5f9;color:#475569;' : ''">📜 <a href="#" @click.prevent="tab='history';loadList('COMPLETED')" style="text-decoration:none;color:inherit;">COMPLETED</a></span>
+          <span style="margin-left:auto;">
+            <button class="btn" @click="toggleSelectAll()">全选 / 反选</button>
+          </span>
+        </div>
+
         <template x-for="it in items" :key="it.id">
-          <div class="item-card">
+          <div class="item-card" :style="selectedIds.has(it.id) ? 'border-color: var(--brand); background: #f0f7ff;' : ''">
             <div class="item-head">
-              <div>
-                <div class="row gap-sm">
-                  <span :class="'dot dot-' + it.status"></span>
-                  <span style="font-weight:600;">#<span x-text="it.id"></span></span>
-                  <span class="mono" x-text="it.pallet_no"></span>
-                  <span style="color:var(--fg-3); font-size:.875rem;" x-text="it.sku"></span>
-                  <span style="color:var(--fg-3); font-size:.875rem;" x-text="'×' + it.qty"></span>
-                </div>
-                <div class="item-meta">
-                  <span x-text="it.product_name"></span>
-                  <template x-if="it.created_by_name"><span>· 登记 <span x-text="it.created_by_name"></span></span></template>
-                  <template x-if="it.completed_at"><span>· 完成 <span x-text="it.completed_by_name"></span> · <span x-text="it.completed_at"></span></span></template>
+              <div style="display:flex; align-items:center; gap:.5rem;">
+                <input type="checkbox" :checked="selectedIds.has(it.id)" @change="toggleSelected(it.id)" style="width:1rem; height:1rem;" />
+                <div>
+                  <div class="row gap-sm">
+                    <span :class="'dot dot-' + it.status"></span>
+                    <span style="font-weight:600;">#<span x-text="it.id"></span></span>
+                    <span class="mono" x-text="it.pallet_no"></span>
+                    <span style="color:var(--fg-3); font-size:.875rem;" x-text="it.sku"></span>
+                    <span style="color:var(--fg-3); font-size:.875rem;" x-text="'×' + it.qty"></span>
+                  </div>
+                  <div class="item-meta">
+                    <span x-text="it.product_name"></span>
+                    <template x-if="it.created_by_name"><span>· 登记 <span x-text="it.created_by_name"></span></span></template>
+                    <template x-if="it.completed_at"><span>· 完成 <span x-text="it.completed_by_name"></span> · <span x-text="it.completed_at"></span></span></template>
+                  </div>
                 </div>
               </div>
               <div class="row gap-sm">
@@ -638,6 +670,11 @@ function app() {
     tokenInfo: null,
     importResult: null,
     importingFile: false,
+    selectedIds: new Set(),
+    bulkAction: '',
+    bulkArg: { sku: '', product_name: '' },
+    bulkBusy: false,
+    bulkResult: '',
 
     async init() {
       try {
@@ -894,6 +931,54 @@ function app() {
       for (let i = 0; i < this.form.headers.length; i++) {
         if (i === this.activeHeader) continue;
         this.form.headers[i].parts = cloned.map(p => ({ ...p }));
+      }
+    },
+
+    async toggleSelected(id) {
+      if (this.selectedIds.has(id)) this.selectedIds.delete(id);
+      else this.selectedIds.add(id);
+      // Force Alpine reactivity on Set
+      this.selectedIds = new Set(this.selectedIds);
+    },
+
+    clearSelection() {
+      this.selectedIds = new Set();
+    },
+
+    toggleSelectAll() {
+      const ids = (this.items || []).map(x => x.id);
+      const allSelected = ids.length > 0 && ids.every(i => this.selectedIds.has(i));
+      if (allSelected) {
+        this.clearSelection();
+      } else {
+        this.selectedIds = new Set(ids);
+      }
+    },
+
+    async runBulkAction() {
+      if (!this.bulkAction || this.selectedIds.size === 0) return;
+      if (!confirm(`对 ${this.selectedIds.size} 项执行 “${this.bulkAction}” ?`)) return;
+      this.bulkBusy = true;
+      this.bulkResult = '';
+      const payload = {
+        ids: Array.from(this.selectedIds),
+        action: this.bulkAction,
+      };
+      if (this.bulkAction === 'set_sku') payload.sku = this.bulkArg.sku || '';
+      if (this.bulkAction === 'set_product_name') payload.product_name = this.bulkArg.product_name || '';
+      try {
+        const r = await this.api('/api/defectives/bulk', { method: 'POST', body: JSON.stringify(payload) });
+        const ok = (r.failures || []).length;
+        this.bulkResult = `✓ ${r.succeeded} 成功，${ok} 失败`;
+        // Re-load the current view so changes are visible.
+        if (this.tab === 'ready' || this.tab === 'pending' || this.tab === 'history') {
+          await this.loadList(this.tab.toUpperCase());
+        }
+        await this.loadCounts();
+      } catch (e) {
+        this.bulkResult = '✗ ' + (e.message || '失败');
+      } finally {
+        this.bulkBusy = false;
       }
     },
 

@@ -126,3 +126,246 @@ async def list_ready(user: dict = Depends(current_user)):
 @router.get("/_/pending")
 async def list_pending(user: dict = Depends(current_user)):
     return await list_with_parts(status_filter="PENDING")
+
+
+@router.post("/bulk")
+async def bulk_action(
+    payload: dict,
+    user: dict = Depends(require_role("repair", "admin", "returns")),
+):
+    """Apply a bulk action to a set of defective items.
+
+    payload:
+      ids: list[int]                 — required
+      action:                          — required
+        "recompute"                  re-evaluate status via inventory
+        "mark_complete"              mark READY → COMPLETED  (require role repair/admin)
+        "set_sku"        { sku }     change sku            (admin only)
+        "set_product_name" { product_name }                (admin only)
+        "delete"                    remove                (admin only)
+      reason: str (optional) — recorded in audit_log
+    """
+    ids = payload.get("ids") or []
+    action = (payload.get("action") or "").strip()
+    reason = (payload.get("reason") or "").strip()
+    if not isinstance(ids, list) or not ids:
+        raise HTTPException(400, "ids must be a non-empty list")
+    if not action:
+        raise HTTPException(400, "action is required")
+
+    pool_ = pool()
+    successes = []
+    failures = []
+
+    async with pool_.acquire() as conn:
+        # Pre-flight: lock existing rows
+        for did in ids:
+            try:
+                async with conn.transaction():
+                    row = await conn.fetchrow(
+                        "SELECT id, status, sku, product_name FROM defective_items WHERE id=$1",
+                        did,
+                    )
+                    if row is None:
+                        failures.append({"id": did, "error": "not found"})
+                        continue
+
+                    if action == "recompute":
+                        # Recompute via matcher
+                        pass  # handled below outside transaction
+                        # NOTE: matcher.evaluate_status acquires pool, so do this AFTER
+                        # releasing the row's transaction
+                    elif action == "mark_complete":
+                        if user["role"] not in ("repair", "admin"):
+                            raise HTTPException(403, "needs repair/admin")
+                        if row["status"] != "READY":
+                            failures.append({"id": did, "error": f"status is {row['status']}"})
+                            continue
+                        await conn.execute(
+                            """
+                            UPDATE defective_items
+                            SET status='COMPLETED', completed_by=$1, completed_at=now()
+                            WHERE id=$2
+                            """,
+                            user["id"], did,
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_complete', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, f'{{"reason":"{reason}"}}',
+                        )
+                    elif action == "set_sku":
+                        if user["role"] != "admin":
+                            raise HTTPException(403, "admin only")
+                        new_sku = (payload.get("sku") or "").strip()
+                        if not new_sku:
+                            raise HTTPException(400, "sku required")
+                        await conn.execute(
+                            "UPDATE defective_items SET sku=$1 WHERE id=$2",
+                            new_sku, did,
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_set_sku', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, f'{{"sku":"{new_sku}","reason":"{reason}"}}',
+                        )
+                    elif action == "set_product_name":
+                        if user["role"] != "admin":
+                            raise HTTPException(403, "admin only")
+                        new_pn = (payload.get("product_name") or "").strip() or None
+                        await conn.execute(
+                            "UPDATE defective_items SET product_name=$1 WHERE id=$2",
+                            new_pn, did,
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_set_product_name', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, f'{{"product_name":"{new_pn or ""}","reason":"{reason}"}}',
+                        )
+                    elif action == "delete":
+                        if user["role"] != "admin":
+                            raise HTTPException(403, "admin only")
+                        await conn.execute("DELETE FROM defective_items WHERE id=$1", did)
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_delete', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, f'{{"reason":"{reason}"}}',
+                        )
+                    else:
+                        failures.append({"id": did, "error": f"unknown action {action!r}"})
+                        continue
+                successes.append({"id": did, "action": action})
+            except HTTPException:
+                raise
+            except Exception as e:
+                failures.append({"id": did, "error": str(e) or "失败"})
+
+        # For recompute, do it OUTSIDE the per-id transactions to avoid pool reuse.
+        if action == "recompute":
+            new_failures = []
+            for did in ids:
+                if any(f["id"] == did and "error" in f for f in failures):
+                    continue
+                try:
+                    new_status = await evaluate_status(did)
+                    successes.append({"id": did, "action": "recompute", "status": new_status})
+                except Exception as e:
+                    failures.append({"id": did, "error": str(e) or "recompute failed"})
+            # Update successes result with status (latest wins)
+            # Rewrite specific recompute entries with status
+            seen = set()
+            new_successes = []
+            for s in successes:
+                if s.get("action") == "recompute":
+                    if s["id"] in seen:
+                        continue
+                    seen.add(s["id"])
+                    for retry in successes:
+                        if retry.get("id") == s["id"] and "status" in retry:
+                            s = retry
+                            break
+                    new_successes.append(s)
+                else:
+                    new_successes.append(s)
+            successes = new_successes
+
+    return {
+        "applied": action,
+        "succeeded": len([s for s in successes if s.get("action") == action or action == "recompute"]),
+        "failed": len(failures),
+        "successes": successes,
+        "failures": failures,
+    }
+
+
+@router.get("/filter")
+async def filter_list(
+    user: dict = Depends(current_user),
+    status: Optional[str] = Query(None, pattern="^(PENDING|READY|COMPLETED)$"),
+    q: Optional[str] = Query(None, description="substring against pallet_no/sku/product_name"),
+    sku: Optional[str] = None,
+    pallet: Optional[str] = None,
+    is_pending: Optional[bool] = Query(None, description="if true, only those with at least one missing part"),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """Filter-driven list. Used by the UI bulk-edit panel.
+
+    Notes: status='PENDING' already returns items with at least one missing
+    part, so the dedicated is_pending flag is mostly redundant.
+    """
+    where = []
+    args = []
+
+    if status:
+        args.append(status)
+        where.append(f"di.status = ${len(args)}")
+    if q:
+        like = f"%{q}%"
+        args.append(like)
+        iq = len(args)
+        where.append(f"(di.pallet_no ILIKE ${iq} OR di.sku ILIKE ${iq} OR di.product_name ILIKE ${iq})")
+    if sku:
+        args.append(sku)
+        where.append(f"di.sku = ${len(args)}")
+    if pallet:
+        args.append(pallet)
+        where.append(f"di.pallet_no = ${len(args)}")
+    if is_pending:
+        where.append(
+            "EXISTS (SELECT 1 FROM defective_parts dp "
+            "LEFT JOIN inventory_snapshot i ON i.part_code = dp.part_code "
+            "WHERE dp.defective_id=di.id AND COALESCE(i.on_hand_qty,0) < dp.qty)"
+        )
+
+    sql = """
+        WITH parts_agg AS (
+            SELECT
+                dp.defective_id,
+                json_agg(json_build_object(
+                    'part_code', dp.part_code,
+                    'part_name', dp.part_name,
+                    'need', dp.qty,
+                    'have', COALESCE(i.on_hand_qty, 0),
+                    'short', GREATEST(dp.qty - COALESCE(i.on_hand_qty, 0), 0)
+                ) ORDER BY dp.id) AS parts
+            FROM defective_parts dp
+            LEFT JOIN inventory_snapshot i ON i.part_code = dp.part_code
+            GROUP BY dp.defective_id
+        )
+        SELECT
+            di.id, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
+            di.created_at, di.completed_at,
+            u_creator.name AS created_by_name,
+            u_completer.name AS completed_by_name,
+            pa.parts
+        FROM defective_items di
+        LEFT JOIN users u_creator ON u_creator.id = di.created_by
+        LEFT JOIN users u_completer ON u_completer.id = di.completed_by
+        LEFT JOIN parts_agg pa ON pa.defective_id = di.id
+        {where}
+        ORDER BY di.created_at DESC
+        LIMIT ${placeholder}
+    """.replace("{where}", ("WHERE " + " AND ".join(where)) if where else "").replace(
+        "${placeholder}", f"${len(args)+1}"
+    )
+    args.append(limit)
+
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(sql, *args)
+    out = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d.get("parts"), str):
+            d["parts"] = json.loads(d["parts"])
+        d["created_at"] = d["created_at"].isoformat() if d["created_at"] else None
+        d["completed_at"] = d["completed_at"].isoformat() if d["completed_at"] else None
+        out.append(d)
+    return out
