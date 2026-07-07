@@ -365,6 +365,7 @@
                 <button type="button" @click="addParts(1)" class="btn">+ 加一行</button>
                 <button type="button" @click="addParts(3)" class="btn">+ 加 3 行</button>
                 <button type="button" @click="pasteIntoActive()" class="btn" title="粘贴 part 列表到当前票的配件区">📋 粘贴</button>
+                <button type="button" @click="openBulkParts()" class="btn" title="多行批量录入（按回车多行）" style="background:var(--brand); color:var(--brand-fg);">📋 多行批量</button>
                 <button type="button" @click="copyActiveToAll()" class="btn" title="把当前票的配件复制给所有票" :disabled="form.headers.length<=1">⤴︎ 复制给全部</button>
               </div>
               <p class="split-hint">
@@ -664,6 +665,8 @@ function app() {
     activeHeader: 0,
     submitMsg: '',
     submitOk: false,
+    bulkPartsOpen: false,
+    bulkPartsText: '',
     uploadMsg: '',
     invSummary: { sku_count: 0, total_units: 0, last_updated: null },
     lookupCode: '',
@@ -938,6 +941,87 @@ function app() {
     },
 
     /**
+     * Open the bulk-parts modal for the currently-active ticket.
+     * Pre-fills the textarea with one code per line from existing parts,
+     * so the user can edit and re-apply.
+     */
+    openBulkParts() {
+      const h = this.getActiveHeader();
+      if (!h) return;
+      const existing = (h.parts || [])
+        .filter(p => (p.part_code || '').trim())
+        .map(p => {
+          const code = (p.part_code || '').trim();
+          const q = Number(p.qty) || 1;
+          return q > 1 ? `${code} *${q}` : code;
+        })
+        .join('\n');
+      this.bulkPartsText = existing;
+      this.bulkPartsOpen = true;
+    },
+    closeBulkParts() {
+      this.bulkPartsOpen = false;
+      this.bulkPartsText = '';
+    },
+    /**
+     * Parse the bulk textarea content into part records.
+     * Each non-empty line becomes one part. Lines may be:
+     *   HS-OU8053BK-002
+     *   HS-OU8053BK-002 *3
+     *   HS-OU8053BK-002 x3
+     * Trailing/leading whitespace and inline comments (#...) ignored.
+     * Lines that are empty or contain only the placeholder strings
+     * ("part_code", "编码") are skipped.
+     */
+    _parseBulkParts(text) {
+      if (!text) return [];
+      const placeholderRe = /^(part[_\s-]?code|编码|code|sku|qty|数量|库存)\s*$/i;
+      const out = [];
+      const seen = new Set();
+      const lines = String(text).replace(/\r/g, '').split('\n');
+      for (let raw of lines) {
+        let line = raw.replace(/#.*$/, '').trim();
+        if (!line) continue;
+        if (placeholderRe.test(line)) continue;
+        // split code and qty
+        let code = line;
+        let qty = 1;
+        const m = line.match(/^(.+?)\s+[*×x]\s*(\d+)\s*$/i);
+        if (m) {
+          code = m[1].trim();
+          qty = Math.max(1, parseInt(m[2], 10) || 1);
+        }
+        if (!code) continue;
+        const key = code.toLowerCase();
+        if (seen.has(key)) continue;  // dedupe within one ticket
+        seen.add(key);
+        out.push({ code, qty });
+      }
+      return out;
+    },
+    /**
+     * Replace the active ticket's parts with the parsed bulk textarea.
+     * part_name is left blank — staff can fill it later or rely on
+     * inventory lookup to populate it server-side.
+     */
+    applyBulkParts() {
+      const h = this.getActiveHeader();
+      if (!h) { this.closeBulkParts(); return; }
+      const parsed = this._parseBulkParts(this.bulkPartsText);
+      if (parsed.length === 0) {
+        alert('从文本里没读出有效 part code。\n每行 1 个 code，可加 *数量，例如：\n  HS-OU8053BK-002\n  HS-OU8053BK-003 *2');
+        return;
+      }
+      h.parts = parsed.map(p => ({
+        _id: this._nextPartId++,
+        part_code: p.code,
+        part_name: '',
+        qty: p.qty,
+      }));
+      this.closeBulkParts();
+    },
+
+    /**
      * Paste tab-separated rows (Excel / Google Sheets / Numbers) into the parts
      * grid of the currently-active ticket.
      */
@@ -1142,5 +1226,24 @@ function app() {
       
       {% endraw %}
       </script>
+
+  <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
+  <div x-show="bulkPartsOpen" x-cloak class="modal-back" @click.self="closeBulkParts()" @keydown.escape.window="closeBulkParts()">
+    <div class="modal-card" style="max-width:32rem;">
+      <h2>📋 批量录入配件 — 第 <span x-text="(activeHeader||0)+1"></span> 票</h2>
+      <p class="hint" style="font-size:.85rem; color:var(--fg-2); margin:.25rem 0 .75rem;">
+        每行 1 个 part code。可加 <code>*数量</code>，例：
+      </p>
+      <pre style="background:var(--bg); padding:.5rem .75rem; border-radius:.5rem; font-size:.8rem; margin:0 0 .75rem; overflow:auto;">HS-OU8053BK-002
+HS-OU8053BK-003 *2
+HS-A-OU8035BK-008</pre>
+      <textarea x-model="bulkPartsText" rows="10" placeholder="HS-OU8053BK-002&#10;HS-OU8053BK-003 *2&#10;..."
+                style="width:100%; box-sizing:border-box; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85rem; padding:.5rem; border:1px solid var(--line); border-radius:.5rem; resize:vertical;"></textarea>
+      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.75rem;">
+        <button type="button" @click="closeBulkParts()" class="btn">取消</button>
+        <button type="button" @click="applyBulkParts()" class="btn primary">展开 (<span x-text="_parseBulkParts(bulkPartsText).length"></span> 条)</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
