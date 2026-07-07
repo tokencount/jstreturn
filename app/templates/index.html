@@ -265,7 +265,7 @@
         <button @click="tab='history';loadList('COMPLETED')" :class="tab==='history' && 'active'" class="tab-btn">📜 历史</button>
         <button @click="tab='inventory';loadSummary()" :class="tab==='inventory' && 'active'" class="tab-btn right">📤 库存</button>
         <button x-show="user && user.role==='admin'" @click="tab='users';loadUsers()" :class="tab==='users' && 'active'" class="tab-btn">⚙ 账号</button>
-        <button x-show="['returns','admin'].includes(user.role)" @click="tab='import'" :class="tab==='import' && 'active'" class="tab-btn">📥 批量导入</button>
+        <button x-show="user && ['returns','admin'].includes(user.role)" @click="tab='import'" :class="tab==='import' && 'active'" class="tab-btn">📥 批量导入</button>
       </div>
 
       <!-- CREATE TAB -->
@@ -349,7 +349,7 @@
                   <div style="width:3.5rem;">qty</div>
                   <div style="width:2rem;"></div>
                 </div>
-                <template x-for="(p, idx) in getActiveParts()" :key="idx">
+                <template x-for="(p, idx) in getActiveParts()" :key="p._id">
                   <div class="sheet-row">
                     <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center;" x-text="idx + 1"></div>
                     <input style="flex:2;" x-model="p.part_code" placeholder="part_code" class="cell"
@@ -446,7 +446,7 @@
               </div>
               <div class="row gap-sm">
                 <span class="status-chip" :class="it.status==='PENDING' ? 'chip-PENDING' : it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="it.status"></span>
-                <button x-show="it.status==='READY' && ['repair','admin'].includes(user.role)"
+                <button x-show="it.status==='READY' && user && ['repair','admin'].includes(user.role)"
                         @click="complete(it.id)" class="btn btn-primary">完成</button>
               </div>
             </div>
@@ -657,7 +657,7 @@ function app() {
         {
           _id: 1,
           pallet_no: '', product_name: '', sku: '', qty: 1,
-          parts: [{ part_code: '', part_name: '', qty: 1 }],
+          parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         },
       ],
     },
@@ -870,11 +870,12 @@ function app() {
      */
     resetForm() {
       this._nextHdrId = 2;
+      this._nextPartId = 1001;
       this.form = {
         headers: [{
           _id: 1,
           pallet_no: '', product_name: '', sku: '', qty: 1,
-          parts: [{ part_code: '', part_name: '', qty: 1 }],
+          parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         }],
       };
       this.activeHeader = 0;
@@ -903,7 +904,7 @@ function app() {
         this.form.headers.push({
           _id: this._nextHdrId++,
           pallet_no: '', product_name: '', sku: '', qty: 1,
-          parts: [{ part_code: '', part_name: '', qty: 1 }],
+          parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         });
       }
       this.activeHeader = this.form.headers.length - 1;
@@ -926,7 +927,7 @@ function app() {
       const h = this.getActiveHeader();
       if (!h) return;
       for (let i = 0; i < n; i++) {
-        h.parts.push({ part_code: '', part_name: '', qty: 1 });
+        h.parts.push({ _id: this._nextPartId++, part_code: '', part_name: '', qty: 1 });
       }
     },
     removePart(hIdx, pIdx) {
@@ -965,6 +966,7 @@ function app() {
         const [code, name, q] = rows[i];
         if (!code) continue;
         newParts.push({
+          _id: this._nextPartId++,
           part_code: code,
           part_name: name || '',
           qty: Number(q) > 0 ? Number(q) : 1,
