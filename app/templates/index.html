@@ -922,6 +922,7 @@ function app() {
      * Copy the currently-active ticket's parts to ALL other tickets.
      * Useful when many pallets share the same repair parts list.
      */
+    copyToAll() {
       const src = this.form.headers[this.activeHeader];
       if (!src) return;
       const cloned = (src.parts || [])
