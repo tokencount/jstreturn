@@ -250,7 +250,7 @@
       </div>
       <div class="row gap-sm">
         
-        <span x-show="user" class="badge" x-text="user.name + ' (' + user.role + ')'"></span>
+        <span x-show="user" class="badge" x-text="user ? (user.name + ' (' + user.role + ')') : ''"></span>
         <button x-show="user" @click="logout()" class="btn">退出</button>
       </div>
     </div>
@@ -270,10 +270,10 @@
 
       <!-- CREATE TAB -->
       <div x-show="tab==='create'" class="panel">
-        <div x-show="!['returns','admin'].includes(user.role)" class="alert alert-warn">
-          ⚠ 录入需要 returns / admin 角色。你当前是 <b x-text="user.role"></b>。
+        <div x-show="user && !['returns','admin'].includes(user.role)" class="alert alert-warn">
+          ⚠ 录入需要 returns / admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
         </div>
-        <form x-show="['returns','admin'].includes(user.role)" @submit.prevent="submitDefective()">
+        <form x-show="user && ['returns','admin'].includes(user.role)" @submit.prevent="submitDefective()">
 
           <!-- Per-ticket: each header row gets its own parts rows.
                Click ▶ to expand and edit the parts for that pallet. -->
@@ -469,8 +469,8 @@
 
       <!-- INVENTORY TAB -->
       <div x-show="tab==='inventory'" class="panel">
-        <div x-show="user.role!=='admin'" class="alert alert-warn">⚠ 上传库存需要 admin 角色。</div>
-        <div x-show="user.role==='admin'">
+        <div x-show="user && user.role!=='admin'" class="alert alert-warn">⚠ 上传库存需要 admin 角色。</div>
+        <div x-show="user && user.role==='admin'">
           <p style="font-size:.875rem; color:var(--fg-2); margin-bottom:.75rem;">
             CSV 列名（大小写不敏感，可任意顺序）：<br>
             <code style="font-size:.75rem; padding:.25rem .4rem; background:#f1f5f9; border-radius:.25rem;">
@@ -523,7 +523,7 @@
           <span x-show="importingFile" style="align-self:center; font-size:.85rem; color:var(--fg-3);">上传中…</span>
         </div>
 
-        <div x-show="importResult" class="alert" :class="importResult && importResult.summary.failed === 0 && importResult.summary.parse_failures_count === 0 ? 'alert-ok' : (importResult.summary.succeeded === 0 ? 'alert-bad' : 'alert-warn')">
+        <div x-show="importResult" class="alert" :class="importResult ? (importResult.summary.failed === 0 && importResult.summary.parse_failures_count === 0 ? 'alert-ok' : (importResult.summary.succeeded === 0 ? 'alert-bad' : 'alert-warn')) : ''">
           <template x-if="importResult">
             <div>
               <div style="font-weight:600;">
@@ -624,8 +624,8 @@
             </tbody>
           </table>
           <div x-show="tokenInfo" class="token-info">
-            <div><b x-text="tokenInfo.name"></b> 的登录 Token：</div>
-            <code x-text="tokenInfo.token"></code>
+            <div><b x-text="(tokenInfo && tokenInfo.name) || ''"></b> 的登录 Token：</div>
+            <code x-text="(tokenInfo && tokenInfo.token) || ''"></code>
             <div style="font-size:.75rem; color:var(--fg-3); margin-top:.25rem;">
               把这个 Token 给当事人，让他们直接登录。
             </div>
