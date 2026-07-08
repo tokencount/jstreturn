@@ -153,6 +153,50 @@ async def patch_defective(
     return {**dict(row), "status": status}
 
 
+@router.put("/{defective_id}/parts")
+async def put_parts(
+    defective_id: int,
+    parts: list["PartIn"],
+    user: dict = Depends(require_role("returns", "repair", "admin")),
+):
+    """Replace the entire parts list for a defective_item.
+
+    Used by the edit modal on READY/PENDING/HISTORY rows. After
+    replacing, re-evaluate status since part changes can flip
+    READY/PENDING.
+    """
+    from app.matcher import evaluate_status as _eval
+    if not parts:
+        raise HTTPException(400, "need at least 1 part")
+
+    async with pool().acquire() as conn:
+        exists = await conn.fetchval("SELECT 1 FROM defective_items WHERE id=$1", defective_id)
+        if not exists:
+            raise HTTPException(404, "not found")
+        async with conn.transaction():
+            await conn.execute("DELETE FROM defective_parts WHERE defective_id=$1", defective_id)
+            for p in parts:
+                await conn.execute(
+                    "INSERT INTO defective_parts (defective_id, part_code, part_name, qty) VALUES ($1, $2, $3, $4)",
+                    defective_id, p.part_code, p.part_name, p.qty,
+                )
+            await conn.execute(
+                """
+                INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                VALUES ($1, 'put_parts', 'defective_item', $2, $3::jsonb)
+                """,
+                user["id"], defective_id,
+                json.dumps({"count": len(parts)}),
+            )
+
+    try:
+        status = await _eval(defective_id)
+    except Exception:
+        status = None
+
+    return {"id": defective_id, "parts": len(parts), "status": status}
+
+
 @router.post("/{defective_id}/complete")
 async def complete(
     defective_id: int,

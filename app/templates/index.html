@@ -683,18 +683,57 @@ function app() {
         },
       ],
     },
-    editModal: { open: false, saving: false, error: '', id: null, pallet_no: '', product_name: '', location: '', sku: '', qty: 1 },
+    editModal: {
+      open: false, saving: false, savingParts: false, error: '',
+      id: null, pallet_no: '', product_name: '', location: '', sku: '', qty: 1,
+      parts: [ ],  // [{part_code:'', part_name:'', qty:1}]
+    },
     openEdit(it) {
+      // Deep-copy parts so user can cancel and re-open without losing server data.
+      const src = (it.parts && it.parts.length)
+        ? it.parts
+        : [{ part_code: '', part_name: '', qty: 1 }];
       this.editModal = {
-        open: true, saving: false, error: '',
+        open: true, saving: false, savingParts: false, error: '',
         id: it.id, pallet_no: it.pallet_no || '',
         product_name: it.product_name || '',
         location: it.location || '',
         sku: it.sku || '',
         qty: Number(it.qty) || 1,
+        parts: src.map(p => ({ part_code: p.part_code || '', part_name: p.part_name || '', qty: Number(p.need || p.qty || 1) })),
       };
     },
     closeEdit() { this.editModal.open = false; this.editModal.error = ''; },
+    addEditPart() {
+      this.editModal.parts.push({ part_code: '', part_name: '', qty: 1 });
+    },
+    removeEditPart(i) {
+      if (this.editModal.parts.length <= 1) return;
+      this.editModal.parts.splice(i, 1);
+    },
+    async saveEditParts() {
+      const m = this.editModal;
+      if (!m.id) return;
+      // Validate
+      const cleaned = [];
+      for (const p of m.parts) {
+        const code = (p.part_code || '').trim();
+        if (!code) { m.error = 'part_code 不能为空'; return; }
+        if (!(Number(p.qty) > 0)) { m.error = 'part qty 必须 > 0'; return; }
+        cleaned.push({ part_code: code, part_name: (p.part_name || '').trim() || null, qty: Number(p.qty) });
+      }
+      m.savingParts = true; m.error = '';
+      try {
+        const r = await this.api('/api/defectives/' + m.id + '/parts', { method: 'PUT', body: JSON.stringify(cleaned) });
+        // Reload the whole list so refreshed inventory status / part codes show.
+        await this.loadList(this.tab === 'history' ? 'COMPLETED' : this.tab.toUpperCase());
+        await this.loadCounts();
+        m.savingParts = false;
+        this.closeEdit();
+      } catch (e) {
+        m.error = (e && e.message) || '保存配件失败';
+      } finally { m.savingParts = false; }
+    },
     async saveEdit() {
       const m = this.editModal;
       if (!m.id) return;
@@ -1340,12 +1379,46 @@ HS-A-OU8035BK-008</pre>
           <input x-model.number="editModal.qty" type="number" min="1" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
         </div>
       </div>
-      <div x-show="editModal.error" style="margin-top:.85rem; padding:.5rem .75rem; background:#fee2e2; color:#991b1b; border-radius:.4rem; font-size:.85rem;" x-text="editModal.error"></div>
-      <div style="margin-top:1rem; display:flex; justify-content:flex-end; gap:.5rem;">
-        <button type="button" @click="closeEdit()" class="btn" :disabled="editModal.saving">取消</button>
-        <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving" x-text="editModal.saving ? '保存中…' : '保存'"></button>
+      <hr style="margin:1.1rem 0; border:none; border-top:1px solid var(--line);" />
+      <div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem;">
+          <span style="font-weight:600;">配件 (Parts)</span>
+          <button type="button" @click="addEditPart()" class="btn" style="padding:.15rem .55rem; font-size:.75rem;">+ 加一行</button>
+        </div>
+        <table style="width:100%; font-size:.85rem;">
+          <thead>
+            <tr style="color:var(--fg-3); font-size:.75rem;">
+              <th style="text-align:left; padding:.25rem .35rem;">Part Code</th>
+              <th style="text-align:left; padding:.25rem .35rem;">Part Name</th>
+              <th style="text-align:right; padding:.25rem .35rem; width:4rem;">Qty</th>
+              <th style="width:2rem;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(p, i) in editModal.parts" :key="i">
+              <tr>
+                <td style="padding:.2rem .35rem;"><input x-model="p.part_code" placeholder="HS-..." style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; font-family:ui-monospace,monospace; font-size:.85rem;" /></td>
+                <td style="padding:.2rem .35rem;"><input x-model="p.part_name" placeholder="名称" style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; font-size:.85rem;" /></td>
+                <td style="padding:.2rem .35rem;"><input x-model.number="p.qty" type="number" min="1" style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; text-align:right;" /></td>
+                <td style="padding:.2rem .35rem; text-align:center;">
+                  <button type="button" @click="removeEditPart(i)" :disabled="editModal.parts.length<=1" class="btn" style="padding:.15rem .45rem; font-size:.75rem;">✕</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
       </div>
-      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">SKU 需要 admin 权限。</span></p>
+      <div x-show="editModal.error" style="margin-top:.85rem; padding:.5rem .75rem; background:#fee2e2; color:#991b1b; border-radius:.4rem; font-size:.85rem;" x-text="editModal.error"></div>
+      <div style="margin-top:1rem; display:flex; justify-content:space-between; gap:.5rem;">
+        <div style="display:flex; gap:.5rem;">
+          <button type="button" @click="saveEditParts()" class="btn" :disabled="editModal.savingParts" x-text="editModal.savingParts ? '保存配件中…' : '保存配件'"></button>
+        </div>
+        <div style="display:flex; gap:.5rem;">
+          <button type="button" @click="closeEdit()" class="btn" :disabled="editModal.saving || editModal.savingParts">取消</button>
+          <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving || editModal.savingParts" x-text="editModal.saving ? '保存中…' : '保存 ticket'"></button>
+        </div>
+      </div>
+      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">SKU 需要 admin 权限。</span></p>
     </div>
   </div>
 </body>
