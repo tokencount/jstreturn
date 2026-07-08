@@ -71,6 +71,57 @@ def _find_col(headers, *aliases):
     return None
 
 
+# Patterns for multi-part syntax in a single cell.
+#   "HS-X *1"                       -> (HS-X, 1)
+#   "HS-X *1 HS-Y *2"                -> [(HS-X, 1), (HS-Y, 2)]
+#   "HS-X\nHS-Y *1"                  -> mixed separators; default qty=1
+#   "HS-X"  (no *N)                  -> not parsed as multi; legacy single-part path applies
+import re as _re
+_MULTI_QTY_RE = _re.compile(r"\s*\*\s*(\d+)\s*")
+
+
+def _parse_multi_part_cell(cell: str):
+    """Parse a part_code cell that may contain multiple parts separated by
+    whitespace, each optionally suffixed with ' *<qty>'.
+
+    Returns a list of (part_code, qty) tuples. Empty list means the cell
+    does NOT look like multi-part (no ' *<num>' markers and the *<qty>*
+    suffix never appears). The caller should fall back to legacy
+    single-part behavior with the part_quantity column.
+
+    Rules:
+      - Optional ' *N' after each part_code (N >= 1).
+      - If only one part in the cell and no ' *N' anywhere, returns []
+        so the caller uses the part_quantity column.
+      - If at least one ' *N' is present, split on whitespace boundaries
+        and assign qty from suffix (default 1).
+      - Tolerates newlines, tabs, multiple spaces.
+    """
+    s = (cell or "").strip()
+    if not s:
+        return []
+    if "*" not in s:
+        # No qty marker; not multi-part syntax.
+        return []
+    # Split on whitespace anywhere; treat each token ending in ' *N' as
+    # (part_code, qty). Simpler model: split on the ' *N' boundary.
+    # Use regex to find "<code> *<qty>" pairs in order.
+    pieces = []
+    pos = 0
+    pattern = _re.compile(r"(?P<code>\S+?)\s*\*\s*(?P<qty>\d+)")
+    while True:
+        m = pattern.search(s, pos)
+        if not m:
+            break
+        qty = int(m.group("qty"))
+        if qty >= 1:
+            pieces.append((m.group("code").strip(), qty))
+        pos = m.end()
+    if not pieces:
+        return []
+    return pieces
+
+
 def _group_tickets(rows):
     """Group rows by pallet_no. Returns dict: pallet_no -> list of rows."""
     groups = defaultdict(list)
@@ -179,38 +230,60 @@ async def _upload_defectives_impl(
         pallet = at(pallet_idx)
         if not pallet:
             continue
-        part_code = at(part_idx)
-        if not part_code:
+
+        # Resolve the part column cell (may contain multi-part syntax).
+        # - Single form: "HS-XXX" with qty from part_quantity column.
+        # - Multi  form: "HS-XXX *1 HS-YYY *2" (whitespace separated).
+        #                  Whitespace may be spaces, tabs, or newlines.
+        #   ' *1' suffix is optional; default qty is 1.
+        cell = at(part_idx)
+        if not cell:
             parse_failures.append({
                 "line": line_no,
-                "reason": "missing or unknown part_code column",
+                "reason": "missing part_code cell",
                 "pallet": pallet,
                 "part_idx": part_idx,
                 "headers": headers if has_header else None,
             })
             continue
-        try:
-            part_qty = int(float(at(part_qty_idx) or 0))
-        except ValueError:
-            part_qty = 0
-        if part_qty <= 0:
-            parse_failures.append({"line": line_no, "reason": "bad part_qty", "pallet": pallet})
-            continue
-        try:
-            qty = int(float(at(qty_idx) or 1))
-        except ValueError:
-            qty = 1
-        parsed.append({
-            "pallet_no": pallet,
-            "product_name": at(prod_idx) or None,
-            "sku": at(sku_idx),
-            "qty": qty if qty > 0 else 1,
-            "part_code": part_code,
-            "part_name": at(part_name_idx) or None,
-            "part_qty": part_qty,
-            "location": at(location_idx) if location_idx is not None else None,
-            "_line": line_no,
-        })
+
+        multi_parts = _parse_multi_part_cell(cell)
+        # If no ` *N` markers were found, fall back to the legacy single-part
+        # behavior using the part_quantity column.
+        if not multi_parts:
+            try:
+                part_qty = int(float(at(part_qty_idx) or 0))
+            except ValueError:
+                part_qty = 0
+            if part_qty <= 0:
+                parse_failures.append({"line": line_no, "reason": "bad part_qty", "pallet": pallet})
+                continue
+            multi_parts = [(cell, part_qty)]  # legacy single
+
+        # If part_name is split by '|', pair them up with multi_parts by
+        # position. Otherwise reuse the same name (or None) for every part.
+        pn_cell = at(part_name_idx)
+        if multi_parts and "|" in pn_cell:
+            pn_list = [p.strip() or None for p in pn_cell.split("|")]
+        else:
+            pn_list = [pn_cell or None]
+        for i_part, (pc, pq) in enumerate(multi_parts):
+            pn = pn_list[i_part] if i_part < len(pn_list) else pn_list[-1]
+            try:
+                qty = int(float(at(qty_idx) or 1))
+            except ValueError:
+                qty = 1
+            parsed.append({
+                "pallet_no": pallet,
+                "product_name": at(prod_idx) or None,
+                "sku": at(sku_idx),
+                "qty": qty if qty > 0 else 1,
+                "part_code": pc,
+                "part_name": pn,
+                "part_qty": pq,
+                "location": at(location_idx) if location_idx is not None else None,
+                "_line": line_no,
+            })
 
     if not parsed:
         raise HTTPException(400, f"no usable rows parsed. failures: {parse_failures[:5]}")
@@ -306,12 +379,22 @@ async def template_csv(user: dict = Depends(require_role("returns", "admin"))):
       - DATE/PALLET/次品仓位/商品名称/SKU/part_code/part_quantity (Cc's spreadsheet layout)
       - pallet_no/product_name/sku/qty/part_code/part_name/part_qty (canonical English)
       - 退件号/产品名称/型号/编码/配件名称/配件数量 (Chinese aliases)
+
+    Multiple parts in one cell (no row duplication):
+        part_code: HS-A *1 HS-B *2 HS-C *1
+      - Whitespace between codes (space, tab, or newline).
+      - ' *N' suffix = qty; default 1.
+      - If no ' *N' appears at all, the cell falls back to the
+        part_quantity column for qty (legacy single-part behavior).
+      - part_name with multiple parts: use '|' to match part_code order,
+        or leave the cell blank to use inventory_match.
     """
+    # Template shows both single-cell-multi-part syntax (Cc's preferred
+    # form:  HS-XXX *1 HS-YYY *1) and the legacy one-row-per-part shape.
     csv_text = (
         "DATE,PALLET,次品仓位,商品名称,SKU,part_code,part_name,part_quantity\n"
-        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-1,渔丝卷套筒,1\n"
-        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-2,伞骨扣,1\n"
-        "13/6/2026,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,P-CODE-3,气缸,2\n"
+        "14/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,\"HS-A *1 HS-B *1\",\"套筒|扣子\",\n"
+        "13/6/2026,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,HS-C,气缸,2\n"
     )
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
