@@ -308,10 +308,10 @@ async def template_csv(user: dict = Depends(require_role("returns", "admin"))):
       - 退件号/产品名称/型号/编码/配件名称/配件数量 (Chinese aliases)
     """
     csv_text = (
-        "DATE,PALLET,次品仓位,商品名称,SKU,part_code,part_quantity\n"
-        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-1,1\n"
-        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-2,1\n"
-        "13/6/2026,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,P-CODE-3,2\n"
+        "DATE,PALLET,次品仓位,商品名称,SKU,part_code,part_name,part_quantity\n"
+        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-1,渔丝卷套筒,1\n"
+        "13/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,P-CODE-2,伞骨扣,1\n"
+        "13/6/2026,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,P-CODE-3,气缸,2\n"
     )
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(
