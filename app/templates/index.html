@@ -465,8 +465,8 @@
                 <td style="text-align:right;" class="mono" :style="row.p.short>0 ? 'color:var(--red); font-weight:600;' : 'color:var(--fg-3)'" x-text="row.p.short"></td>
                 <td>
                   <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
-                  <button x-show="row.pi===0 && row.it.status!=='COMPLETED' && user && ['returns','repair','admin'].includes(user.role)"
-                          @click="openEdit(row.it)" class="btn" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">✏️ 改</button>
+                  <button x-show="row.pi===0 && row.it.status!=='COMPLETED' && user"
+                          @click.stop="openEdit(row.it); console.log('edit btn clicked', row.it.id)" class="btn" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">✏️ 改</button>
                   <button x-show="row.pi===0 && row.it.status==='READY' && user && ['repair','admin'].includes(user.role)"
                           @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">完成</button>
                 </td>
@@ -689,6 +689,7 @@ function app() {
       parts: [ ],  // [{part_code:'', part_name:'', qty:1}]
     },
     openEdit(it) {
+      console.log('[openEdit] called with id=', it && it.id, 'parts=', (it&&it.parts||[]).length);
       // Deep-copy parts so user can cancel and re-open without losing server data.
       const src = (it.parts && it.parts.length)
         ? it.parts
