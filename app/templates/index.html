@@ -109,6 +109,14 @@
     .input-block + .input-block { margin-top: .75rem; }
 
     table { width: 100%; font-size: .875rem; border-collapse: collapse; }
+    .def-table { background: var(--panel); border-radius: .5rem; overflow: hidden; border: 1px solid var(--line); }
+    .def-table th { text-align: left; padding: .5rem .65rem; font-size: .75rem; color: var(--fg-3); background: #f8fafc; border-bottom: 1px solid var(--line); font-weight: 600; white-space: nowrap; }
+    .def-table td { padding: .45rem .65rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .def-table tr:last-child td { border-bottom: 0; }
+    .def-table .row-PENDING { background: rgba(254, 226, 226, .25); }
+    .def-table .row-READY { background: rgba(220, 252, 231, .18); }
+    .def-table .row-COMPLETED td { color: var(--fg-3); }
+    .def-table tr:hover { background: rgba(99, 102, 241, .06); }
     th, td { padding: .5rem; text-align: left; }
     th { font-size: .75rem; color: var(--fg-3); border-bottom: 1px solid var(--line); }
     tbody tr { border-bottom: 1px solid var(--line); }
@@ -424,47 +432,46 @@
           </span>
         </div>
 
-        <template x-for="it in items" :key="it.id">
-          <div class="item-card" :style="selectedIds.has(it.id) ? 'border-color: var(--brand); background: #f0f7ff;' : ''">
-            <div class="item-head">
-              <div style="display:flex; align-items:center; gap:.5rem;">
-                <input type="checkbox" :checked="selectedIds.has(it.id)" @change="toggleSelected(it.id)" style="width:1rem; height:1rem;" />
-                <div>
-                  <div class="row gap-sm">
-                    <span :class="'dot dot-' + it.status"></span>
-                    <span style="font-weight:600;">#<span x-text="it.id"></span></span>
-                    <span class="mono" x-text="it.pallet_no"></span>
-                    <span style="color:var(--fg-3); font-size:.875rem;" x-text="it.sku"></span>
-                    <span style="color:var(--fg-3); font-size:.875rem;" x-text="'×' + it.qty"></span>
-                  </div>
-                  <div class="item-meta">
-                    <span x-text="it.product_name"></span>
-                    <template x-if="it.location"><span>· 📍 <span class="mono" x-text="it.location"></span></span></template>
-                    <template x-if="it.created_by_name"><span>· 登记 <span x-text="it.created_by_name"></span></span></template>
-                    <template x-if="it.completed_at"><span>· 完成 <span x-text="it.completed_by_name"></span> · <span x-text="it.completed_at"></span></span></template>
-                  </div>
-                </div>
-              </div>
-              <div class="row gap-sm">
-                <span class="status-chip" :class="it.status==='PENDING' ? 'chip-PENDING' : it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="it.status"></span>
-                <button x-show="it.status==='READY' && user && ['repair','admin'].includes(user.role)"
-                        @click="complete(it.id)" class="btn btn-primary">完成</button>
-              </div>
-            </div>
-
-            <div class="parts-grid">
-              <template x-for="p in (it.parts || [])" :key="p.part_code">
-                <div class="part-row">
-                  <span><span class="mono" x-text="p.part_code"></span> <span style="color:var(--fg-3);" x-text="p.part_name"></span></span>
-                  <span :style="p.short>0 ? 'color:var(--red)' : 'color:var(--green)'">
-                    需 <span x-text="p.need"></span> · 有 <span x-text="p.have"></span>
-                    <span x-show="p.short>0"> · 缺 <b x-text="p.short"></b></span>
-                  </span>
-                </div>
-              </template>
-            </div>
-          </div>
-        </template>
+        <table class="def-table" x-show="items.length > 0">
+          <thead>
+            <tr>
+              <th style="width:2rem;"><input type="checkbox" :checked="items.length>0 && items.every(it=>selectedIds.has(it.id))" @change="toggleSelectAll()" /></th>
+              <th>Date</th>
+              <th>Pallet</th>
+              <th>Location</th>
+              <th>Product Name</th>
+              <th>Product SKU</th>
+              <th>Part Code</th>
+              <th>Part Name</th>
+              <th style="text-align:right;">Qty</th>
+              <th style="text-align:right;">On Hand</th>
+              <th style="text-align:right;">Short</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="row in expandedRows" :key="row.key">
+              <tr :class="row.it.status==='PENDING' ? 'row-PENDING' : row.it.status==='READY' ? 'row-READY' : 'row-COMPLETED'" :style="selectedIds.has(row.it.id) ? 'background:#f0f7ff;' : ''">
+                <td><input type="checkbox" :checked="selectedIds.has(row.it.id)" @change="toggleSelected(row.it.id)" x-show="row.pi===0" /></td>
+                <td class="mono" x-text="row.pi===0 ? (row.it.created_at||'').slice(0,10) : ''"></td>
+                <td class="mono"><span x-show="row.pi===0" x-text="row.it.pallet_no"></span></td>
+                <td><span x-show="row.pi===0" class="mono" x-text="row.it.location || '—'"></span></td>
+                <td><span x-show="row.pi===0" x-text="row.it.product_name || '—'"></span></td>
+                <td><span x-show="row.pi===0" class="mono" x-text="row.it.sku"></span></td>
+                <td class="mono" x-text="row.p.part_code"></td>
+                <td x-text="row.p.part_name || ''" style="color:var(--fg-3); font-size:.875rem;"></td>
+                <td style="text-align:right;" class="mono" x-text="row.p.need"></td>
+                <td style="text-align:right;" class="mono" :style="(row.p.have||0) < (row.p.need||0) ? 'color:var(--green)' : 'color:var(--fg-3)'" x-text="row.p.have"></td>
+                <td style="text-align:right;" class="mono" :style="row.p.short>0 ? 'color:var(--red); font-weight:600;' : 'color:var(--fg-3)'" x-text="row.p.short"></td>
+                <td>
+                  <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
+                  <button x-show="row.pi===0 && row.it.status==='READY' && user && ['repair','admin'].includes(user.role)"
+                          @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">完成</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
         <div x-show="items.length===0" class="empty-state">暂无数据</div>
       </div>
 
@@ -653,6 +660,18 @@ function app() {
     tab: 'create',
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
+    get expandedRows() {
+      // Flatten items × parts into one row per part for the table view.
+      // ticket-info columns are shown only on the first row (pi === 0).
+      const out = [];
+      for (const it of (this.items || [])) {
+        const parts = (it.parts && it.parts.length)
+          ? it.parts
+          : [{ part_code: '—', part_name: '', need: it.qty, have: 0, short: 0 }];
+        parts.forEach((p, pi) => out.push({ it, p, pi, key: it.id + '-' + (p.part_code || pi) }));
+      }
+      return out;
+    },
     form: {
       headers: [
         {
