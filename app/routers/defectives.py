@@ -30,6 +30,18 @@ class DefectiveIn(BaseModel):
     parts: list[PartIn] = Field(..., min_length=1)
 
 
+class DefectivePatch(BaseModel):
+    """Patch a defective_item's header fields (parts not edited here;
+    use /api/defectives/{id}/parts for that). All fields optional;
+    only provided fields are updated.
+    """
+    pallet_no: Optional[str] = Field(None, min_length=1, max_length=80)
+    product_name: Optional[str] = None
+    location: Optional[str] = None
+    sku: Optional[str] = Field(None, min_length=1, max_length=80)
+    qty: Optional[int] = Field(None, gt=0)
+
+
 @router.post("")
 async def create_defective(
     payload: DefectiveIn,
@@ -81,6 +93,64 @@ async def get_defective(defective_id: int, user: dict = Depends(current_user)):
         if it["id"] == defective_id:
             return it
     raise HTTPException(404, "not found")
+
+
+@router.patch("/{defective_id}")
+async def patch_defective(
+    defective_id: int,
+    payload: DefectivePatch,
+    user: dict = Depends(require_role("returns", "repair", "admin")),
+):
+    """Update editable header fields on a defective_item.
+
+    Returns the updated row. Records each changed field in audit_log.
+    Only admin can change sku (sku is a workflow-bearing field).
+    """
+    import json as _json
+    from app.matcher import evaluate_status as _eval
+
+    # Build dynamic UPDATE based on what was provided.
+    fields = []
+    values: list = []
+    idx = 1
+    body = payload.model_dump(exclude_unset=True)
+    if not body:
+        raise HTTPException(400, "no fields to update")
+    # sku is admin-only because changing sku invalidates matches.
+    if "sku" in body and user["role"] != "admin":
+        raise HTTPException(403, "sku change requires admin")
+    for k in ("pallet_no", "product_name", "location", "sku", "qty"):
+        if k in body:
+            fields.append(f"{k} = ${idx}")
+            values.append(body[k])
+            idx += 1
+    values.append(defective_id)
+    set_clause = ", ".join(fields) + f", updated_at = NOW()"
+
+    async with pool().acquire() as conn:
+        row = await conn.fetchrow(
+            f"UPDATE defective_items SET {set_clause} WHERE id = ${idx} RETURNING id, pallet_no, product_name, location, sku, qty, status",
+            *values,
+        )
+        if row is None:
+            raise HTTPException(404, "not found")
+        # Audit: log which fields changed.
+        await conn.execute(
+            """
+            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+            VALUES ($1, 'patch', 'defective_item', $2, $3::jsonb)
+            """,
+            user["id"], defective_id,
+            _json.dumps({"fields": list(body.keys())}),
+        )
+
+    # Re-evaluate status since sku/qty changes can flip READY/PENDING.
+    try:
+        status = await _eval(defective_id)
+    except Exception:
+        status = row["status"]
+
+    return {**dict(row), "status": status}
 
 
 @router.post("/{defective_id}/complete")

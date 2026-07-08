@@ -465,6 +465,8 @@
                 <td style="text-align:right;" class="mono" :style="row.p.short>0 ? 'color:var(--red); font-weight:600;' : 'color:var(--fg-3)'" x-text="row.p.short"></td>
                 <td>
                   <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
+                  <button x-show="row.pi===0 && user && ['returns','repair','admin'].includes(user.role)"
+                          @click="openEdit(row.it)" class="btn" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">✏️ 改</button>
                   <button x-show="row.pi===0 && row.it.status==='READY' && user && ['repair','admin'].includes(user.role)"
                           @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">完成</button>
                 </td>
@@ -680,6 +682,46 @@ function app() {
           parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         },
       ],
+    },
+    editModal: { open: false, saving: false, error: '', id: null, pallet_no: '', product_name: '', location: '', sku: '', qty: 1 },
+    openEdit(it) {
+      this.editModal = {
+        open: true, saving: false, error: '',
+        id: it.id, pallet_no: it.pallet_no || '',
+        product_name: it.product_name || '',
+        location: it.location || '',
+        sku: it.sku || '',
+        qty: Number(it.qty) || 1,
+      };
+    },
+    closeEdit() { this.editModal.open = false; this.editModal.error = ''; },
+    async saveEdit() {
+      const m = this.editModal;
+      if (!m.id) return;
+      m.saving = true; m.error = '';
+      try {
+        const body = {
+          pallet_no: m.pallet_no.trim(),
+          product_name: m.product_name.trim() || null,
+          location: m.location.trim() || null,
+          sku: m.sku.trim(),
+          qty: Number(m.qty) || 1,
+        };
+        await this.api('/api/defectives/' + m.id, { method: 'PATCH', body: JSON.stringify(body) });
+        // Update local list (don't refetch everything).
+        const it = (this.items || []).find(x => x.id === m.id);
+        if (it) {
+          it.pallet_no = body.pallet_no;
+          it.product_name = body.product_name;
+          it.location = body.location;
+          it.sku = body.sku;
+          it.qty = body.qty;
+        }
+        this.closeEdit();
+        await this.loadCounts();
+      } catch (e) {
+        m.error = (e && e.message) || '保存失败';
+      } finally { m.saving = false; }
     },
     activeHeader: 0,
     submitMsg: '',
@@ -1267,6 +1309,43 @@ HS-A-OU8035BK-008</pre>
         <button type="button" @click="closeBulkParts()" class="btn">取消</button>
         <button type="button" @click="applyBulkParts()" class="btn primary">展开 (<span x-text="_parseBulkParts(bulkPartsText).length"></span> 条)</button>
       </div>
+    </div>
+  </div>
+  <!-- EDIT MODAL -->
+  <div x-show="editModal.open" x-transition.opacity class="modal-backdrop" @click.self="closeEdit()" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:1rem;">
+    <div style="background:white; border-radius:1rem; padding:1.25rem 1.5rem; width:100%; max-width:32rem; box-shadow:0 12px 40px rgba(0,0,0,.25);">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.85rem;">
+        <h2 style="font-size:1.1rem; font-weight:600; margin:0;">✏️ 改 ticket #<span x-text="editModal.id"></span></h2>
+        <button type="button" @click="closeEdit()" class="btn" style="padding:.15rem .55rem;">✕</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:.85rem;">
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">Pallet No.</label>
+          <input x-model="editModal.pallet_no" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">SKU</label>
+          <input x-model="editModal.sku" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div style="grid-column:1 / -1;">
+          <label style="font-size:.8rem; color:var(--fg-3);">商品名称 (Product Name)</label>
+          <input x-model="editModal.product_name" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">仓位 (Location)</label>
+          <input x-model="editModal.location" placeholder="H5-66-4" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">数量 (Qty)</label>
+          <input x-model.number="editModal.qty" type="number" min="1" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+      </div>
+      <div x-show="editModal.error" style="margin-top:.85rem; padding:.5rem .75rem; background:#fee2e2; color:#991b1b; border-radius:.4rem; font-size:.85rem;" x-text="editModal.error"></div>
+      <div style="margin-top:1rem; display:flex; justify-content:flex-end; gap:.5rem;">
+        <button type="button" @click="closeEdit()" class="btn" :disabled="editModal.saving">取消</button>
+        <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving" x-text="editModal.saving ? '保存中…' : '保存'"></button>
+      </div>
+      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">SKU 需要 admin 权限。</span></p>
     </div>
   </div>
 </body>
