@@ -17,6 +17,7 @@ Returns a summary with per-ticket successes / failures.
 """
 from __future__ import annotations
 
+import logging
 import csv
 import io
 import json
@@ -26,12 +27,16 @@ from collections import defaultdict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 
 from app.auth import require_role
 from app.db import pool
 from app.matcher import evaluate_status
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
+
+
+log = logging.getLogger("jstreturn.imports")
 
 
 # ---------- helpers ----------
@@ -55,11 +60,14 @@ def _looks_header(row) -> bool:
     return any(tok in joined for tok in HEADER_TOKENS)
 
 
-def _find_col(fieldnames, *aliases):
+def _find_col(headers, *aliases):
+    """Return the *index* of the first header matching any alias (case-insensitive),
+    or None if no match. headers is the lowercased list of column names.
+    """
     for a in aliases:
         a_norm = a.lower()
-        if a_norm in fieldnames:
-            return a_norm
+        if a_norm in headers:
+            return headers.index(a_norm)
     return None
 
 
@@ -76,6 +84,36 @@ def _group_tickets(rows):
 async def upload_defectives(
     file: UploadFile = File(...),
     user: dict = Depends(require_role("returns", "admin")),
+):
+    # Top-level try/except: never let the server return HTML 500.
+    # Always return structured JSON so the client can show the real error.
+    try:
+        return await _upload_defectives_impl(file, user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.exception("imports: unhandled exception")
+        return JSONResponse(
+            {
+                "summary": {
+                    "submitted_tickets": 0,
+                    "submitted_rows": 0,
+                    "succeeded": 0,
+                    "failed": 1,
+                    "parse_failures_count": 0,
+                    "header_detected": False,
+                },
+                "successes": [],
+                "failures": [{"pallet": "—", "error": f"{type(e).__name__}: {e}"}],
+                "parse_failures_sample": [],
+            },
+            status_code=200,
+        )
+
+
+async def _upload_defectives_impl(
+    file: UploadFile,
+    user: dict,
 ):
     if not file.filename.lower().endswith((".csv", ".txt")):
         raise HTTPException(400, "must be .csv or .txt")
@@ -136,13 +174,20 @@ async def upload_defectives(
     parse_failures = []
     for line_no, row in enumerate(data_rows, start=2 if has_header else 1):
         def at(i):
-            return row[i].strip() if i < len(row) else ""
+            # Defensive: column index can be None when header lookup failed.
+            return row[i].strip() if isinstance(i, int) and i < len(row) else ""
         pallet = at(pallet_idx)
         if not pallet:
             continue
         part_code = at(part_idx)
         if not part_code:
-            parse_failures.append({"line": line_no, "reason": "missing part_code", "pallet": pallet})
+            parse_failures.append({
+                "line": line_no,
+                "reason": "missing or unknown part_code column",
+                "pallet": pallet,
+                "part_idx": part_idx,
+                "headers": headers if has_header else None,
+            })
             continue
         try:
             part_qty = int(float(at(part_qty_idx) or 0))

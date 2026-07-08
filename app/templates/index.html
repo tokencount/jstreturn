@@ -1178,16 +1178,21 @@ function app() {
       fd.append('file', f);
       try {
         const r = await fetch('/api/imports/defectives', { method: 'POST', body: fd, credentials: 'include' });
-        const data = await r.json();
+        // Read body as text first so we can show the real server response
+        // even if it's HTML or non-JSON (e.g. Uvicorn 500 page).
+        const text = await r.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) { /* keep null */ }
         if (!r.ok) {
+          const detail = (data && (data.detail || data.error)) || (text && text.slice(0, 300)) || ('HTTP ' + r.status);
           this.importResult = {
             summary: { failed: 1, parse_failures_count: 0, header_detected: false, succeeded: 0, submitted_tickets: 0, submitted_rows: 0 },
             successes: [],
-            failures: [{ pallet: '—', error: (data && data.detail) || JSON.stringify(data) || ('HTTP ' + r.status) }],
+            failures: [{ pallet: '—', error: detail }],
             parse_failures_sample: [],
           };
         } else {
-          this.importResult = data;
+          this.importResult = data || { summary: { succeeded: 0, failed: 1, parse_failures_count: 0, submitted_tickets: 0, header_detected: false }, successes: [], failures: [{ pallet: '—', error: 'empty response' }], parse_failures_sample: [] };
           this.loadCounts();
         }
       } catch (e) {
