@@ -20,7 +20,9 @@ from app.db import pool
 async def evaluate_status(defective_id: int) -> str:
     """Compute current status for a defective_item and persist if changed.
 
-    Returns the status (PENDING/READY).
+    Returns the status (PENDING/READY/COMPLETED). Returns "PENDING" if the
+    item doesn't exist (caller should ignore — used in fire-and-forget
+    re-evaluation paths).
     """
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
@@ -50,17 +52,53 @@ async def evaluate_status(defective_id: int) -> str:
         return new_status
 
 
+async def reevaluate_all_pending_ready() -> dict:
+    """Re-evaluate every PENDING/READY defective item in ONE round-trip,
+    using a single SQL that joins parts to inventory. Returns a status flip
+    summary {to_pending: int, to_ready: int, no_change: int}.
+
+    This replaces the previous O(N) loop of evaluate_status() calls.
+    """
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            WITH computed AS (
+                SELECT
+                    di.id,
+                    di.status AS current,
+                    BOOL_AND(COALESCE(i.on_hand_qty, 0) >= dp.qty) AS all_ready
+                FROM defective_items di
+                JOIN defective_parts dp ON dp.defective_id = di.id
+                WHERE di.status IN ('PENDING', 'READY')
+                GROUP BY di.id, di.status
+            )
+            SELECT id, current,
+                   CASE WHEN all_ready THEN 'READY' ELSE 'PENDING' END AS new_status
+            FROM computed
+            """
+        )
+        flip = {"to_pending": 0, "to_ready": 0, "no_change": 0}
+        for r in rows:
+            if r["new_status"] == r["current"]:
+                flip["no_change"] += 1
+                continue
+            if r["new_status"] == "PENDING":
+                flip["to_pending"] += 1
+            else:
+                flip["to_ready"] += 1
+            await conn.execute(
+                "UPDATE defective_items SET status=$1 WHERE id=$2 AND status != 'COMPLETED'",
+                r["new_status"], r["id"],
+            )
+        return flip
+
+
 async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200):
     """List defectives. If filtering by PENDING/READY, recompute status first
     so inventory changes from manual CSV upload are immediately reflected.
     """
     if status_filter in ("PENDING", "READY"):
-        async with pool().acquire() as conn:
-            ids = await conn.fetch(
-                "SELECT id FROM defective_items WHERE status IN ('PENDING','READY')"
-            )
-        for r in ids:
-            await evaluate_status(r["id"])
+        await reevaluate_all_pending_ready()
     sql = """
         WITH parts_agg AS (
             SELECT

@@ -38,8 +38,9 @@ async def login(payload: LoginIn, response: Response):
         raise HTTPException(400, "name and token required")
 
     expected = login_token_for(name)
-    # Constant-time-ish compare
-    if not (len(token) == len(expected) and all(a == b for a, b in zip(token, expected))):
+    # Constant-time compare (avoid timing oracle on tokens).
+    import hmac as _hmac
+    if not _hmac.compare_digest(token, expected):
         raise HTTPException(401, "invalid credentials")
 
     async with pool().acquire() as conn:

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.auth import require_role
 from app.db import pool
-from app.matcher import evaluate_status
+from app.matcher import reevaluate_all_pending_ready
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
@@ -107,21 +107,10 @@ async def upload_csv(
             )
 
     # Re-evaluate every PENDING/READY defective against the fresh stock
-    async with pool().acquire() as conn:
-        rows_to_eval = await conn.fetch(
-            "SELECT id, status FROM defective_items WHERE status IN ('PENDING','READY')"
-        )
-    reevaluated = 0
-    status_flip = {"to_pending": 0, "to_ready": 0}
-    for r in rows_to_eval:
-        prev = r["status"]
-        new_status = await evaluate_status(r["id"])
-        if new_status != prev:
-            if new_status == "PENDING":
-                status_flip["to_pending"] += 1
-            elif new_status == "READY":
-                status_flip["to_ready"] += 1
-        reevaluated += 1
+    # in a single SQL round-trip (was O(N) per-item before).
+    flip = await reevaluate_all_pending_ready()
+    status_flip = {"to_pending": flip["to_pending"], "to_ready": flip["to_ready"]}
+    reevaluated = flip["no_change"] + flip["to_pending"] + flip["to_ready"]
 
     return {
         "inserted": len(rows),

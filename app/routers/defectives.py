@@ -294,7 +294,8 @@ async def bulk_action(
                         # releasing the row's transaction
                     elif action == "mark_complete":
                         if user["role"] not in ("repair", "admin"):
-                            raise HTTPException(403, "needs repair/admin")
+                            failures.append({"id": did, "error": "needs repair/admin"})
+                            continue
                         if row["status"] != "READY":
                             failures.append({"id": did, "error": f"status is {row['status']}"})
                             continue
@@ -311,14 +312,16 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_complete', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, f'{{"reason":"{reason}"}}',
+                            user["id"], did, json.dumps({"reason": reason}),
                         )
                     elif action == "set_sku":
                         if user["role"] != "admin":
-                            raise HTTPException(403, "admin only")
+                            failures.append({"id": did, "error": "admin only"})
+                            continue
                         new_sku = (payload.get("sku") or "").strip()
                         if not new_sku:
-                            raise HTTPException(400, "sku required")
+                            failures.append({"id": did, "error": "sku required"})
+                            continue
                         await conn.execute(
                             "UPDATE defective_items SET sku=$1 WHERE id=$2",
                             new_sku, did,
@@ -328,11 +331,12 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_set_sku', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, f'{{"sku":"{new_sku}","reason":"{reason}"}}',
+                            user["id"], did, json.dumps({"sku": new_sku, "reason": reason}),
                         )
                     elif action == "set_location":
                         if user["role"] != "admin":
-                            raise HTTPException(403, "admin only")
+                            failures.append({"id": did, "error": "admin only"})
+                            continue
                         new_loc = (payload.get("location") or "").strip() or None
                         await conn.execute(
                             "UPDATE defective_items SET location=$1 WHERE id=$2",
@@ -343,11 +347,12 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_set_location', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, f'{{"location":"{new_loc or ""}","reason":"{reason}"}}',
+                            user["id"], did, json.dumps({"location": new_loc, "reason": reason}),
                         )
                     elif action == "set_product_name":
                         if user["role"] != "admin":
-                            raise HTTPException(403, "admin only")
+                            failures.append({"id": did, "error": "admin only"})
+                            continue
                         new_pn = (payload.get("product_name") or "").strip() or None
                         await conn.execute(
                             "UPDATE defective_items SET product_name=$1 WHERE id=$2",
@@ -358,18 +363,19 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_set_product_name', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, f'{{"product_name":"{new_pn or ""}","reason":"{reason}"}}',
+                            user["id"], did, json.dumps({"product_name": new_pn, "reason": reason}),
                         )
                     elif action == "delete":
                         if user["role"] != "admin":
-                            raise HTTPException(403, "admin only")
+                            failures.append({"id": did, "error": "admin only"})
+                            continue
                         await conn.execute("DELETE FROM defective_items WHERE id=$1", did)
                         await conn.execute(
                             """
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_delete', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, f'{{"reason":"{reason}"}}',
+                            user["id"], did, json.dumps({"reason": reason}),
                         )
                     else:
                         failures.append({"id": did, "error": f"unknown action {action!r}"})

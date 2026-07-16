@@ -1,7 +1,6 @@
 """Cron-triggered endpoints. Auth: X-Cron-Secret header."""
 from __future__ import annotations
 
-import hashlib
 import hmac
 import os
 from datetime import date
@@ -9,7 +8,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.db import pool
-from app.matcher import evaluate_status, list_with_parts, summary_counts
+from app.matcher import list_with_parts, reevaluate_all_pending_ready, summary_counts
 from app.telegram import send_to_admins
 
 router = APIRouter(prefix="/cron", tags=["cron"])
@@ -17,22 +16,14 @@ router = APIRouter(prefix="/cron", tags=["cron"])
 
 def check_cron_secret(x_cron_secret: str = Header(...)):
     expected = os.environ.get("CRON_SECRET", "")
-    if not expected or not hmac.compare_digest(
-        hashlib.sha256(x_cron_secret.encode()).hexdigest(),
-        hashlib.sha256(expected.encode()).hexdigest(),
-    ):
+    if not expected or not hmac.compare_digest(x_cron_secret, expected):
         raise HTTPException(401, "bad cron secret")
 
 
 @router.post("/daily-summary", dependencies=[Depends(check_cron_secret)])
 async def daily_summary():
     """09:00 and 18:00. Recompute all PENDING/READY statuses, send a summary."""
-    async with pool().acquire() as conn:
-        ids = await conn.fetch(
-            "SELECT id FROM defective_items WHERE status IN ('PENDING','READY')"
-        )
-    for r in ids:
-        await evaluate_status(r["id"])
+    await reevaluate_all_pending_ready()
 
     counts = await summary_counts()
     items = await list_with_parts(limit=200)

@@ -1,6 +1,8 @@
 """User management — admin only."""
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -82,7 +84,7 @@ async def create_user(
             VALUES ($1, 'create_or_update', 'user', $2, $3::jsonb)
             """,
             actor["id"], row["id"],
-            f'{{"name":"{payload.name}","role":"{payload.role}"}}',
+            json.dumps({"name": payload.name, "role": payload.role}),
         )
 
     d = dict(row)
@@ -142,7 +144,7 @@ async def update_user(
             VALUES ($1, 'update', 'user', $2, $3::jsonb)
             """,
             actor["id"], user_id,
-            f'{{"role":"{new_role}","active":{str(new_active).lower()}}}',
+            json.dumps({"role": new_role, "active": new_active}),
         )
 
     d = dict(row)

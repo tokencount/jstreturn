@@ -32,8 +32,16 @@ async def send_message(chat_id: str | int, text: str, parse_mode: str = "HTML") 
         return False
 
 
-async def send_to_admins(text: str) -> bool:
+async def send_to_admin(text: str) -> bool:
+    """Send a message to the single configured admin (ADMIN_CHAT_ID).
+
+    Name kept plural in legacy callers — see send_to_admins below.
+    """
     admin_id = os.environ.get("ADMIN_CHAT_ID", "")
     if not admin_id:
         return False
     return await send_message(admin_id, text)
+
+
+# Backwards-compat alias (function actually sends to one admin).
+send_to_admins = send_to_admin
