@@ -646,6 +646,95 @@
         </div>
       </div>
 
+  <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
+  <div x-show="bulkPartsOpen" x-cloak class="modal-back" @click.self="closeBulkParts()" @keydown.escape.window="closeBulkParts()">
+    <div class="modal-card" style="max-width:32rem;">
+      <h2>📋 批量录入配件 — 第 <span x-text="(activeHeader||0)+1"></span> 票</h2>
+      <p class="hint" style="font-size:.85rem; color:var(--fg-2); margin:.25rem 0 .75rem;">
+        每行 1 个 part code。可加 <code>*数量</code>，例：
+      </p>
+      <pre style="background:var(--bg); padding:.5rem .75rem; border-radius:.5rem; font-size:.8rem; margin:0 0 .75rem; overflow:auto;">HS-OU8053BK-002
+HS-OU8053BK-003 *2
+HS-A-OU8035BK-008</pre>
+      <textarea x-model="bulkPartsText" rows="10" placeholder="HS-OU8053BK-002&#10;HS-OU8053BK-003 *2&#10;..."
+                style="width:100%; box-sizing:border-box; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85rem; padding:.5rem; border:1px solid var(--line); border-radius:.5rem; resize:vertical;"></textarea>
+      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.75rem;">
+        <button type="button" @click="closeBulkParts()" class="btn">取消</button>
+        <button type="button" @click="applyBulkParts()" class="btn primary">展开 (<span x-text="_parseBulkParts(bulkPartsText).length"></span> 条)</button>
+      </div>
+    </div>
+  </div>
+  <!-- EDIT MODAL -->
+  <div x-show="editModal.open" x-transition.opacity class="modal-backdrop" @click.self="closeEdit()" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:1rem;">
+    <div style="background:white; border-radius:1rem; padding:1.25rem 1.5rem; width:100%; max-width:32rem; box-shadow:0 12px 40px rgba(0,0,0,.25);">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.85rem;">
+        <h2 style="font-size:1.1rem; font-weight:600; margin:0;">✏️ 改 ticket #<span x-text="editModal.id"></span></h2>
+        <button type="button" @click="closeEdit()" class="btn" style="padding:.15rem .55rem;">✕</button>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:.85rem;">
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">Pallet No.</label>
+          <input x-model="editModal.pallet_no" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">SKU</label>
+          <input x-model="editModal.sku" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div style="grid-column:1 / -1;">
+          <label style="font-size:.8rem; color:var(--fg-3);">商品名称 (Product Name)</label>
+          <input x-model="editModal.product_name" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">仓位 (Location)</label>
+          <input x-model="editModal.location" placeholder="H5-66-4" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">数量 (Qty)</label>
+          <input x-model.number="editModal.qty" type="number" min="1" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+      </div>
+      <hr style="margin:1.1rem 0; border:none; border-top:1px solid var(--line);" />
+      <div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem;">
+          <span style="font-weight:600;">配件 (Parts)</span>
+          <button type="button" @click="addEditPart()" class="btn" style="padding:.15rem .55rem; font-size:.75rem;">+ 加一行</button>
+        </div>
+        <table style="width:100%; font-size:.85rem;">
+          <thead>
+            <tr style="color:var(--fg-3); font-size:.75rem;">
+              <th style="text-align:left; padding:.25rem .35rem;">Part Code</th>
+              <th style="text-align:left; padding:.25rem .35rem;">Part Name</th>
+              <th style="text-align:right; padding:.25rem .35rem; width:4rem;">Qty</th>
+              <th style="width:2rem;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="(p, i) in editModal.parts" :key="i">
+              <tr>
+                <td style="padding:.2rem .35rem;"><input x-model="p.part_code" placeholder="HS-..." style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; font-family:ui-monospace,monospace; font-size:.85rem;" /></td>
+                <td style="padding:.2rem .35rem;"><input x-model="p.part_name" placeholder="名称" style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; font-size:.85rem;" /></td>
+                <td style="padding:.2rem .35rem;"><input x-model.number="p.qty" type="number" min="1" style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; text-align:right;" /></td>
+                <td style="padding:.2rem .35rem; text-align:center;">
+                  <button type="button" @click="removeEditPart(i)" :disabled="editModal.parts.length<=1" class="btn" style="padding:.15rem .45rem; font-size:.75rem;">✕</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div x-show="editModal.error" style="margin-top:.85rem; padding:.5rem .75rem; background:#fee2e2; color:#991b1b; border-radius:.4rem; font-size:.85rem;" x-text="editModal.error"></div>
+      <div style="margin-top:1rem; display:flex; justify-content:space-between; gap:.5rem;">
+        <div style="display:flex; gap:.5rem;">
+          <button type="button" @click="saveEditParts()" class="btn" :disabled="editModal.savingParts" x-text="editModal.savingParts ? '保存配件中…' : '保存配件'"></button>
+        </div>
+        <div style="display:flex; gap:.5rem;">
+          <button type="button" @click="closeEdit()" class="btn" :disabled="editModal.saving || editModal.savingParts">取消</button>
+          <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving || editModal.savingParts" x-text="editModal.saving ? '保存中…' : '保存 ticket'"></button>
+        </div>
+      </div>
+      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">SKU 需要 admin 权限。</span></p>
+    </div>
+  </div>
     </div>
   </div>
 
@@ -1336,94 +1425,5 @@ function app() {
       {% endraw %}
       </script>
 
-  <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
-  <div x-show="bulkPartsOpen" x-cloak class="modal-back" @click.self="closeBulkParts()" @keydown.escape.window="closeBulkParts()">
-    <div class="modal-card" style="max-width:32rem;">
-      <h2>📋 批量录入配件 — 第 <span x-text="(activeHeader||0)+1"></span> 票</h2>
-      <p class="hint" style="font-size:.85rem; color:var(--fg-2); margin:.25rem 0 .75rem;">
-        每行 1 个 part code。可加 <code>*数量</code>，例：
-      </p>
-      <pre style="background:var(--bg); padding:.5rem .75rem; border-radius:.5rem; font-size:.8rem; margin:0 0 .75rem; overflow:auto;">HS-OU8053BK-002
-HS-OU8053BK-003 *2
-HS-A-OU8035BK-008</pre>
-      <textarea x-model="bulkPartsText" rows="10" placeholder="HS-OU8053BK-002&#10;HS-OU8053BK-003 *2&#10;..."
-                style="width:100%; box-sizing:border-box; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85rem; padding:.5rem; border:1px solid var(--line); border-radius:.5rem; resize:vertical;"></textarea>
-      <div style="display:flex; gap:.5rem; justify-content:flex-end; margin-top:.75rem;">
-        <button type="button" @click="closeBulkParts()" class="btn">取消</button>
-        <button type="button" @click="applyBulkParts()" class="btn primary">展开 (<span x-text="_parseBulkParts(bulkPartsText).length"></span> 条)</button>
-      </div>
-    </div>
-  </div>
-  <!-- EDIT MODAL -->
-  <div x-show="editModal.open" x-transition.opacity class="modal-backdrop" @click.self="closeEdit()" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:1rem;">
-    <div style="background:white; border-radius:1rem; padding:1.25rem 1.5rem; width:100%; max-width:32rem; box-shadow:0 12px 40px rgba(0,0,0,.25);">
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.85rem;">
-        <h2 style="font-size:1.1rem; font-weight:600; margin:0;">✏️ 改 ticket #<span x-text="editModal.id"></span></h2>
-        <button type="button" @click="closeEdit()" class="btn" style="padding:.15rem .55rem;">✕</button>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:.85rem;">
-        <div>
-          <label style="font-size:.8rem; color:var(--fg-3);">Pallet No.</label>
-          <input x-model="editModal.pallet_no" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
-        </div>
-        <div>
-          <label style="font-size:.8rem; color:var(--fg-3);">SKU</label>
-          <input x-model="editModal.sku" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
-        </div>
-        <div style="grid-column:1 / -1;">
-          <label style="font-size:.8rem; color:var(--fg-3);">商品名称 (Product Name)</label>
-          <input x-model="editModal.product_name" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
-        </div>
-        <div>
-          <label style="font-size:.8rem; color:var(--fg-3);">仓位 (Location)</label>
-          <input x-model="editModal.location" placeholder="H5-66-4" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
-        </div>
-        <div>
-          <label style="font-size:.8rem; color:var(--fg-3);">数量 (Qty)</label>
-          <input x-model.number="editModal.qty" type="number" min="1" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
-        </div>
-      </div>
-      <hr style="margin:1.1rem 0; border:none; border-top:1px solid var(--line);" />
-      <div>
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:.5rem;">
-          <span style="font-weight:600;">配件 (Parts)</span>
-          <button type="button" @click="addEditPart()" class="btn" style="padding:.15rem .55rem; font-size:.75rem;">+ 加一行</button>
-        </div>
-        <table style="width:100%; font-size:.85rem;">
-          <thead>
-            <tr style="color:var(--fg-3); font-size:.75rem;">
-              <th style="text-align:left; padding:.25rem .35rem;">Part Code</th>
-              <th style="text-align:left; padding:.25rem .35rem;">Part Name</th>
-              <th style="text-align:right; padding:.25rem .35rem; width:4rem;">Qty</th>
-              <th style="width:2rem;"></th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="(p, i) in editModal.parts" :key="i">
-              <tr>
-                <td style="padding:.2rem .35rem;"><input x-model="p.part_code" placeholder="HS-..." style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; font-family:ui-monospace,monospace; font-size:.85rem;" /></td>
-                <td style="padding:.2rem .35rem;"><input x-model="p.part_name" placeholder="名称" style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; font-size:.85rem;" /></td>
-                <td style="padding:.2rem .35rem;"><input x-model.number="p.qty" type="number" min="1" style="width:100%; padding:.3rem .5rem; border:1px solid var(--line); border-radius:.3rem; text-align:right;" /></td>
-                <td style="padding:.2rem .35rem; text-align:center;">
-                  <button type="button" @click="removeEditPart(i)" :disabled="editModal.parts.length<=1" class="btn" style="padding:.15rem .45rem; font-size:.75rem;">✕</button>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-      </div>
-      <div x-show="editModal.error" style="margin-top:.85rem; padding:.5rem .75rem; background:#fee2e2; color:#991b1b; border-radius:.4rem; font-size:.85rem;" x-text="editModal.error"></div>
-      <div style="margin-top:1rem; display:flex; justify-content:space-between; gap:.5rem;">
-        <div style="display:flex; gap:.5rem;">
-          <button type="button" @click="saveEditParts()" class="btn" :disabled="editModal.savingParts" x-text="editModal.savingParts ? '保存配件中…' : '保存配件'"></button>
-        </div>
-        <div style="display:flex; gap:.5rem;">
-          <button type="button" @click="closeEdit()" class="btn" :disabled="editModal.saving || editModal.savingParts">取消</button>
-          <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving || editModal.savingParts" x-text="editModal.saving ? '保存中…' : '保存 ticket'"></button>
-        </div>
-      </div>
-      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">SKU 需要 admin 权限。</span></p>
-    </div>
-  </div>
 </body>
 </html>
