@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,6 +22,7 @@ class PartIn(BaseModel):
 
 
 class DefectiveIn(BaseModel):
+    business_date: date = Field(default_factory=date.today)
     pallet_no: str = Field(..., min_length=1, max_length=80)
     product_name: Optional[str] = None
     location: Optional[str] = None
@@ -35,6 +36,7 @@ class DefectivePatch(BaseModel):
     use /api/defectives/{id}/parts for that). All fields optional;
     only provided fields are updated.
     """
+    business_date: Optional[date] = None
     pallet_no: Optional[str] = Field(None, min_length=1, max_length=80)
     product_name: Optional[str] = None
     location: Optional[str] = None
@@ -51,11 +53,11 @@ async def create_defective(
         async with conn.transaction():
             di_id = await conn.fetchval(
                 """
-                INSERT INTO defective_items (pallet_no, product_name, sku, qty, location, created_by)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO defective_items (business_date, pallet_no, product_name, sku, qty, location, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
                 """,
-                payload.pallet_no, payload.product_name, payload.sku, payload.qty, payload.location, user["id"],
+                payload.business_date, payload.pallet_no, payload.product_name, payload.sku, payload.qty, payload.location, user["id"],
             )
             for p in payload.parts:
                 await conn.execute(
@@ -70,7 +72,7 @@ async def create_defective(
                 INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                 VALUES ($1, 'create', 'defective_item', $2, $3::jsonb)
                 """,
-                user["id"], di_id, json.dumps(payload.model_dump()),
+                user["id"], di_id, json.dumps(payload.model_dump(mode="json")),
             )
 
     status = await evaluate_status(di_id)
@@ -119,7 +121,7 @@ async def patch_defective(
     # sku is admin-only because changing sku invalidates matches.
     if "sku" in body and user["role"] != "admin":
         raise HTTPException(403, "sku change requires admin")
-    for k in ("pallet_no", "product_name", "location", "sku", "qty"):
+    for k in ("business_date", "pallet_no", "product_name", "location", "sku", "qty"):
         if k in body:
             fields.append(f"{k} = ${idx}")
             values.append(body[k])
@@ -128,8 +130,15 @@ async def patch_defective(
     set_clause = ", ".join(fields) + f", updated_at = NOW()"
 
     async with pool().acquire() as conn:
+        current = await conn.fetchrow(
+            "SELECT status FROM defective_items WHERE id=$1", defective_id
+        )
+        if current is None:
+            raise HTTPException(404, "not found")
+        if current["status"] == "COMPLETED" and user["role"] != "admin":
+            raise HTTPException(409, "completed item is locked; admin correction required")
         row = await conn.fetchrow(
-            f"UPDATE defective_items SET {set_clause} WHERE id = ${idx} RETURNING id, pallet_no, product_name, location, sku, qty, status",
+            f"UPDATE defective_items SET {set_clause} WHERE id = ${idx} RETURNING id, business_date, pallet_no, product_name, location, sku, qty, status",
             *values,
         )
         if row is None:
@@ -170,9 +179,11 @@ async def put_parts(
         raise HTTPException(400, "need at least 1 part")
 
     async with pool().acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM defective_items WHERE id=$1", defective_id)
-        if not exists:
+        current = await conn.fetchrow("SELECT status FROM defective_items WHERE id=$1", defective_id)
+        if not current:
             raise HTTPException(404, "not found")
+        if current["status"] == "COMPLETED" and user["role"] != "admin":
+            raise HTTPException(409, "completed item is locked; admin correction required")
         async with conn.transaction():
             await conn.execute("DELETE FROM defective_parts WHERE defective_id=$1", defective_id)
             for p in parts:
@@ -515,3 +526,4 @@ async def filter_list(
         d["completed_at"] = d["completed_at"].isoformat() if d["completed_at"] else None
         out.append(d)
     return out
+    business_date: Optional[date] = None

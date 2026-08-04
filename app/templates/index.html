@@ -300,6 +300,7 @@
               <div class="sheet">
                 <div class="sheet-header">
                   <div style="width:1.6rem;">#</div>
+                  <div style="width:8rem;">Date</div>
                   <div style="flex:1.4;">Pallet No.</div>
                   <div style="flex:2;">Product Name</div>
                   <div style="flex:1;">SKU</div>
@@ -310,6 +311,8 @@
                   <div class="sheet-row" :class="{ 'header-active': activeHeader === idx }" style="cursor:pointer;">
                     <div style="width:1.6rem; color:var(--fg-3); font-size:.8rem; text-align:center; padding:.5rem .25rem;" x-text="idx + 1"
                          @mousedown="activeHeader = idx"></div>
+                    <input style="width:8rem;" x-model="h.business_date" type="date" class="cell"
+                           @focus="activeHeader = idx" @mousedown="activeHeader = idx" />
                     <input style="flex:1.4;" x-model="h.pallet_no" placeholder="PLT-001" class="cell"
                            @focus="activeHeader = idx"
                            @mousedown="activeHeader = idx" />
@@ -456,7 +459,7 @@
             <template x-for="row in expandedRows" :key="row.key">
               <tr :class="row.it.status==='PENDING' ? 'row-PENDING' : row.it.status==='READY' ? 'row-READY' : 'row-COMPLETED'" :style="selectedIds.has(row.it.id) ? 'background:#f0f7ff;' : ''">
                 <td><input type="checkbox" :checked="selectedIds.has(row.it.id)" @change="toggleSelected(row.it.id)" x-show="row.pi===0" /></td>
-                <td class="mono" x-text="row.pi===0 ? (row.it.created_at||'').slice(0,10) : ''"></td>
+                <td class="mono" x-text="row.pi===0 ? (row.it.business_date || (row.it.created_at||'').slice(0,10)) : ''"></td>
                 <td class="mono"><span x-show="row.pi===0" x-text="row.it.pallet_no"></span></td>
                 <td><span x-show="row.pi===0" class="mono" x-text="row.it.location || '—'"></span></td>
                 <td><span x-show="row.pi===0" x-text="row.it.product_name || '—'"></span></td>
@@ -673,6 +676,10 @@ HS-A-OU8035BK-008</pre>
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:.85rem;">
         <div>
+          <label style="font-size:.8rem; color:var(--fg-3);">业务日期 (Date)</label>
+          <input x-model="editModal.business_date" type="date" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
+        </div>
+        <div>
           <label style="font-size:.8rem; color:var(--fg-3);">Pallet No.</label>
           <input x-model="editModal.pallet_no" style="width:100%; padding:.45rem .6rem; border:1px solid var(--line); border-radius:.4rem; margin-top:.2rem;" />
         </div>
@@ -770,7 +777,7 @@ function app() {
       headers: [
         {
           _id: 1,
-          pallet_no: '', product_name: '', sku: '', qty: 1,
+          business_date: new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10), pallet_no: '', product_name: '', sku: '', qty: 1,
           parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         },
       ],
@@ -779,7 +786,7 @@ function app() {
     _nextPartId: 1001,
     editModal: {
       open: false, saving: false, savingParts: false, error: '',
-      id: null, pallet_no: '', product_name: '', location: '', sku: '', qty: 1,
+      id: null, business_date: '', pallet_no: '', product_name: '', location: '', sku: '', qty: 1,
       parts: [ ],  // [{part_code:'', part_name:'', qty:1}]
     },
     openEdit(it) {
@@ -789,7 +796,7 @@ function app() {
         : [{ part_code: '', part_name: '', qty: 1 }];
       this.editModal = {
         open: true, saving: false, savingParts: false, error: '',
-        id: it.id, pallet_no: it.pallet_no || '',
+        id: it.id, business_date: it.business_date || (it.created_at || '').slice(0,10), pallet_no: it.pallet_no || '',
         product_name: it.product_name || '',
         location: it.location || '',
         sku: it.sku || '',
@@ -834,6 +841,7 @@ function app() {
       m.saving = true; m.error = '';
       try {
         const body = {
+          business_date: m.business_date,
           pallet_no: m.pallet_no.trim(),
           product_name: m.product_name.trim() || null,
           location: m.location.trim() || null,
@@ -845,6 +853,7 @@ function app() {
         const it = (this.items || []).find(x => x.id === m.id);
         if (it) {
           it.pallet_no = body.pallet_no;
+          it.business_date = body.business_date;
           it.product_name = body.product_name;
           it.location = body.location;
           it.sku = body.sku;
@@ -1029,6 +1038,7 @@ function app() {
           qty: Number(p.qty) || 1,
         }));
         const payload = {
+          business_date: t.business_date || new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),
           pallet_no: (t.pallet_no || '').trim(),
           product_name: (t.product_name || '').trim() || null,
           sku: (t.sku || '').trim(),
@@ -1071,7 +1081,7 @@ function app() {
       this.form = {
         headers: [{
           _id: 1,
-          pallet_no: '', product_name: '', sku: '', qty: 1,
+          business_date: new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10), pallet_no: '', product_name: '', sku: '', qty: 1,
           parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         }],
       };
@@ -1100,7 +1110,7 @@ function app() {
       for (let i = 0; i < n; i++) {
         this.form.headers.push({
           _id: this._nextHdrId++,
-          pallet_no: '', product_name: '', sku: '', qty: 1,
+          business_date: new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10), pallet_no: '', product_name: '', sku: '', qty: 1,
           parts: [{ _id: 1000, part_code: '', part_name: '', qty: 1 }],
         });
       }

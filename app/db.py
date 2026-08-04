@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS public.defective_items (
 );
 -- Migration: add location (次品仓位) if missing. Idempotent.
 ALTER TABLE public.defective_items ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE public.defective_items ADD COLUMN IF NOT EXISTS business_date DATE NOT NULL DEFAULT CURRENT_DATE;
+ALTER TABLE public.defective_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+CREATE INDEX IF NOT EXISTS idx_def_business_date ON public.defective_items (business_date);
 CREATE INDEX IF NOT EXISTS idx_def_location ON public.defective_items (location);
 CREATE INDEX IF NOT EXISTS idx_def_pallet  ON public.defective_items (pallet_no);
 CREATE INDEX IF NOT EXISTS idx_def_sku     ON public.defective_items (sku);

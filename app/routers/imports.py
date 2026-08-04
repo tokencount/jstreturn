@@ -5,7 +5,8 @@ CSV / Excel format — one row per part, pallet_no repeats within a group:
     pallet_no, product_name?, sku, qty, part_code, part_name?, part_qty
 
 Rules:
-- Rows with the same pallet_no form ONE defective_item.
+- Rows with the same pallet_no + SKU form ONE defective_item.  A pallet may
+  contain several SKUs; each SKU must remain independently repairable.
 - Empty/whitespace pallet_no row is skipped.
 - The header row (first row) is auto-detected by checking for known column
   names; if detected, the rest of the file is treated as data. If no header
@@ -23,6 +24,7 @@ import io
 import json
 import re
 import time
+from datetime import date
 from collections import defaultdict
 from typing import Optional
 
@@ -123,10 +125,10 @@ def _parse_multi_part_cell(cell: str):
 
 
 def _group_tickets(rows):
-    """Group rows by pallet_no. Returns dict: pallet_no -> list of rows."""
+    """Group rows by (business date, pallet_no, SKU)."""
     groups = defaultdict(list)
     for r in rows:
-        groups[r.get("pallet_no") or ""].append(r)
+        groups[(r.get("business_date"), r.get("pallet_no") or "", r.get("sku") or "")].append(r)
     return groups
 
 
@@ -212,6 +214,7 @@ async def _upload_defectives_impl(
         if qty_idx is None:
             qty_idx = part_qty_idx
         location_idx = col("location", "次品仓位", "仓位", "warehouse", "loc", "位置")
+        date_idx = col("date", "business_date", "日期")
         part_idx = col("part_code", "part", "编码", "配件编码", "jst_code", "part code")
         part_name_idx = col("part_name", "配件名称", "name_part")
     else:
@@ -219,6 +222,7 @@ async def _upload_defectives_impl(
         pallet_idx, prod_idx, sku_idx, qty_idx = 1, 3, 4, 6
         part_idx, part_name_idx, part_qty_idx = 6, 5, 7
         location_idx = 2
+        date_idx = 0
 
     # Convert each data row to a structured dict.
     parsed = []
@@ -229,6 +233,13 @@ async def _upload_defectives_impl(
             return row[i].strip() if isinstance(i, int) and i < len(row) else ""
         pallet = at(pallet_idx)
         if not pallet:
+            continue
+
+        raw_date = at(date_idx)
+        try:
+            business_date = date.fromisoformat(raw_date) if raw_date else date.today()
+        except ValueError:
+            parse_failures.append({"line": line_no, "reason": "bad DATE; use YYYY-MM-DD", "pallet": pallet})
             continue
 
         # Resolve the part column cell (may contain multi-part syntax).
@@ -275,6 +286,7 @@ async def _upload_defectives_impl(
                 qty = 1
             parsed.append({
                 "pallet_no": pallet,
+                "business_date": business_date,
                 "product_name": at(prod_idx) or None,
                 "sku": at(sku_idx),
                 "qty": qty if qty > 0 else 1,
@@ -291,7 +303,7 @@ async def _upload_defectives_impl(
     # Group by pallet_no, validate each has at least one valid row.
     groups = _group_tickets(parsed)
     tickets = {}
-    for pallet, items in groups.items():
+    for (business_date, pallet, grouped_sku), items in groups.items():
         sku = items[0]["sku"]
         product_name = items[0]["product_name"]
         qty = items[0]["qty"]
@@ -301,7 +313,7 @@ async def _upload_defectives_impl(
             "part_name": it["part_name"],
             "qty": it["part_qty"],
         } for it in items]
-        tickets[pallet] = {
+        tickets[(business_date, pallet, grouped_sku)] = {
             "sku": sku,
             "product_name": product_name,
             "qty": qty,
@@ -314,7 +326,7 @@ async def _upload_defectives_impl(
     failures = []
 
     async with pool().acquire() as conn:
-        for pallet, t in tickets.items():
+        for (business_date, pallet, _grouped_sku), t in tickets.items():
             if not t["sku"]:
                 failures.append({"pallet": pallet, "error": "missing sku"})
                 continue
@@ -322,11 +334,11 @@ async def _upload_defectives_impl(
                 async with conn.transaction():
                     di_id = await conn.fetchval(
                         """
-                        INSERT INTO defective_items (pallet_no, product_name, sku, qty, location, created_by)
-                        VALUES ($1, $2, $3, $4, $5, $6)
+                        INSERT INTO defective_items (business_date, pallet_no, product_name, sku, qty, location, created_by)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                         RETURNING id
                         """,
-                        pallet, t["product_name"], t["sku"], t["qty"], t["location"], user["id"],
+                        business_date, pallet, t["product_name"], t["sku"], t["qty"], t["location"], user["id"],
                     )
                     for p in t["parts"]:
                         await conn.execute(
@@ -393,8 +405,8 @@ async def template_csv(user: dict = Depends(require_role("returns", "admin"))):
     # form:  HS-XXX *1 HS-YYY *1) and the legacy one-row-per-part shape.
     csv_text = (
         "DATE,PALLET,次品仓位,商品名称,SKU,part_code,part_name,part_quantity\n"
-        "14/6/2026,PLT-001,H5-66-4,钓鱼伞,SKU-3301,\"HS-A *1 HS-B *1\",\"套筒|扣子\",\n"
-        "13/6/2026,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,HS-C,气缸,2\n"
+        "2026-06-14,PLT-001,H5-66-4,钓鱼伞,SKU-3301,\"HS-A *1 HS-B *1\",\"套筒|扣子\",\n"
+        "2026-06-13,PLT-002,H5-67-3,碳钢蛋卷桌,SKU-3302,HS-C,气缸,2\n"
     )
     from fastapi.responses import PlainTextResponse
     return PlainTextResponse(

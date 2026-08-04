@@ -74,6 +74,7 @@ ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
 
 CREATE TABLE public.defective_items (
     id integer NOT NULL,
+    business_date date DEFAULT CURRENT_DATE NOT NULL,
     pallet_no text NOT NULL,
     product_name text,
     sku text NOT NULL,
@@ -359,4 +360,3 @@ ALTER TABLE ONLY public.defective_parts
 --
 
 \unrestrict rBAqgKZmYjn4uCfwMSDjfHcKQndCPTHuyZ2DRlD4hG5j7GCwTjLLLI1aPfOL5rB
-

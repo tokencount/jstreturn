@@ -1,102 +1,167 @@
-"""Status calculation: PENDING / READY / COMPLETED.
+"""Inventory allocation and status calculation.
 
-Single source of truth: a SQL view that joins defective_items + defective_parts
-to inventory_snapshot and tells you, per defective_id, whether all parts are
-sufficient.
-
-Status transitions:
-  PENDING   -> READY         when every part qty <= on_hand_qty
-  READY     -> COMPLETED    when repair marks it complete
-  COMPLETED is terminal
+READY means stock has been reserved for the whole defective item.  Stock is
+never counted twice.  Pallets with the highest projected repairable ratio are
+allocated first; an item only receives stock when every required part can be
+reserved.
 """
 from __future__ import annotations
 
+from collections import defaultdict
+from datetime import datetime, timezone
+from fractions import Fraction
 import json
-from typing import Optional
+from typing import Iterable, Mapping, Optional
 
 from app.db import pool
 
 
-async def evaluate_status(defective_id: int) -> str:
-    """Compute current status for a defective_item and persist if changed.
+def _demands(parts: Iterable[Mapping]) -> dict[str, int]:
+    """Merge duplicate part codes belonging to one defective item."""
+    out: dict[str, int] = defaultdict(int)
+    for part in parts:
+        code = str(part["part_code"]).strip()
+        if code:
+            out[code] += int(part["qty"])
+    return dict(out)
 
-    Returns the status (PENDING/READY/COMPLETED). Returns "PENDING" if the
-    item doesn't exist (caller should ignore — used in fire-and-forget
-    re-evaluation paths).
-    """
-    async with pool().acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT
-                di.id,
-                di.status AS current,
-                BOOL_AND(COALESCE(i.on_hand_qty, 0) >= dp.qty) AS all_ready
-            FROM defective_items di
-            JOIN defective_parts dp ON dp.defective_id = di.id
-            LEFT JOIN inventory_snapshot i ON i.part_code = dp.part_code
-            WHERE di.id = $1
-            GROUP BY di.id, di.status
-            """,
-            defective_id,
-        )
-        if row is None:
-            return "PENDING"
-        if row["current"] == "COMPLETED":
-            return "COMPLETED"
-        new_status = "READY" if row["all_ready"] else "PENDING"
-        if new_status != row["current"]:
-            await conn.execute(
-                "UPDATE defective_items SET status=$1 WHERE id=$2 AND status != 'COMPLETED'",
-                new_status, defective_id,
+
+def _allocate_within_pallet(items: list[dict], stock: dict[str, int]) -> list[int]:
+    """Greedily maximise complete items; partial reservations are forbidden."""
+    remaining = dict(stock)
+    waiting = list(items)
+    ready: list[int] = []
+    while waiting:
+        feasible = [
+            item for item in waiting
+            if item["demands"] and all(remaining.get(code, 0) >= qty for code, qty in item["demands"].items())
+        ]
+        if not feasible:
+            break
+
+        # Prefer the item consuming the smallest share of scarce stock. This
+        # normally completes more SKUs than input/id order alone.
+        def cost(item: dict):
+            scarcity = sum(
+                Fraction(qty, max(remaining.get(code, 0), 1))
+                for code, qty in item["demands"].items()
             )
-        return new_status
+            return (scarcity, sum(item["demands"].values()), item["created_at"], item["id"])
+
+        chosen = min(feasible, key=cost)
+        for code, qty in chosen["demands"].items():
+            remaining[code] -= qty
+        ready.append(chosen["id"])
+        waiting.remove(chosen)
+    return ready
+
+
+def allocate_by_pallet(items: Iterable[Mapping], inventory: Mapping[str, int]) -> set[int]:
+    """Return item ids that receive a complete stock reservation.
+
+    Pallets are ranked using a projection against the same starting inventory:
+    repairable ratio, then repairable count, then oldest item, then pallet no.
+    Once ranked, real inventory is deducted pallet by pallet.
+    """
+    stock = {str(k): max(int(v), 0) for k, v in inventory.items()}
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for raw in items:
+        created = raw.get("created_at") or datetime.max.replace(tzinfo=timezone.utc)
+        grouped[str(raw.get("pallet_no") or "")].append({
+            "id": int(raw["id"]),
+            "created_at": created,
+            "demands": _demands(raw.get("parts") or []),
+        })
+
+    ranked = []
+    for pallet, pallet_items in grouped.items():
+        projected = _allocate_within_pallet(pallet_items, stock)
+        oldest = min(item["created_at"] for item in pallet_items)
+        ratio = Fraction(len(projected), len(pallet_items))
+        ranked.append((pallet, pallet_items, ratio, len(projected), oldest))
+
+    ranked.sort(key=lambda row: (-row[2], -row[3], row[4], row[0]))
+
+    remaining = dict(stock)
+    ready: set[int] = set()
+    for _pallet, pallet_items, _ratio, _count, _oldest in ranked:
+        allocated = _allocate_within_pallet(pallet_items, remaining)
+        allocated_set = set(allocated)
+        ready.update(allocated_set)
+        for item in pallet_items:
+            if item["id"] in allocated_set:
+                for code, qty in item["demands"].items():
+                    remaining[code] -= qty
+    return ready
 
 
 async def reevaluate_all_pending_ready() -> dict:
-    """Re-evaluate every PENDING/READY defective item in ONE round-trip,
-    using a single SQL that joins parts to inventory. Returns a status flip
-    summary {to_pending: int, to_ready: int, no_change: int}.
-
-    This replaces the previous O(N) loop of evaluate_status() calls.
-    """
+    """Rebuild every READY reservation using pallet-priority allocation."""
     async with pool().acquire() as conn:
-        rows = await conn.fetch(
-            """
-            WITH computed AS (
-                SELECT
-                    di.id,
-                    di.status AS current,
-                    BOOL_AND(COALESCE(i.on_hand_qty, 0) >= dp.qty) AS all_ready
+        async with conn.transaction():
+            # Serialise allocation runs so concurrent imports/edits cannot
+            # publish two different reservation plans.
+            await conn.execute("SELECT pg_advisory_xact_lock(74687201)")
+            item_rows = await conn.fetch(
+                """
+                SELECT di.id, di.pallet_no, di.status, di.created_at,
+                       COALESCE(json_agg(json_build_object(
+                           'part_code', dp.part_code, 'qty', dp.qty
+                       ) ORDER BY dp.id) FILTER (WHERE dp.id IS NOT NULL), '[]'::json) AS parts
                 FROM defective_items di
-                JOIN defective_parts dp ON dp.defective_id = di.id
+                LEFT JOIN defective_parts dp ON dp.defective_id = di.id
                 WHERE di.status IN ('PENDING', 'READY')
-                GROUP BY di.id, di.status
+                GROUP BY di.id, di.pallet_no, di.status, di.created_at
+                """
             )
-            SELECT id, current,
-                   CASE WHEN all_ready THEN 'READY' ELSE 'PENDING' END AS new_status
-            FROM computed
-            """
+            inventory_rows = await conn.fetch(
+                "SELECT part_code, on_hand_qty FROM inventory_snapshot"
+            )
+
+            items = []
+            for row in item_rows:
+                item = dict(row)
+                if isinstance(item["parts"], str):
+                    item["parts"] = json.loads(item["parts"])
+                items.append(item)
+            ready_ids = allocate_by_pallet(
+                items,
+                {row["part_code"]: row["on_hand_qty"] for row in inventory_rows},
+            )
+
+            flip = {"to_pending": 0, "to_ready": 0, "no_change": 0}
+            updates = []
+            for item in items:
+                new_status = "READY" if item["id"] in ready_ids else "PENDING"
+                current = item["status"]
+                if new_status == current:
+                    flip["no_change"] += 1
+                elif new_status == "READY":
+                    flip["to_ready"] += 1
+                else:
+                    flip["to_pending"] += 1
+                if new_status != current:
+                    updates.append((new_status, item["id"]))
+            if updates:
+                await conn.executemany(
+                    "UPDATE defective_items SET status=$1 WHERE id=$2 AND status != 'COMPLETED'",
+                    updates,
+                )
+            return flip
+
+
+async def evaluate_status(defective_id: int) -> str:
+    """Rebuild the global plan, then return one item's resulting status."""
+    await reevaluate_all_pending_ready()
+    async with pool().acquire() as conn:
+        status = await conn.fetchval(
+            "SELECT status FROM defective_items WHERE id=$1", defective_id
         )
-        flip = {"to_pending": 0, "to_ready": 0, "no_change": 0}
-        for r in rows:
-            if r["new_status"] == r["current"]:
-                flip["no_change"] += 1
-                continue
-            if r["new_status"] == "PENDING":
-                flip["to_pending"] += 1
-            else:
-                flip["to_ready"] += 1
-            await conn.execute(
-                "UPDATE defective_items SET status=$1 WHERE id=$2 AND status != 'COMPLETED'",
-                r["new_status"], r["id"],
-            )
-        return flip
+    return status or "PENDING"
 
 
 async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200):
-    """List defectives. If filtering by PENDING/READY, recompute status first
-    so inventory changes from manual CSV upload are immediately reflected.
-    """
+    """List defectives, refreshing the global reservation plan first."""
     if status_filter in ("PENDING", "READY"):
         await reevaluate_all_pending_ready()
     sql = """
@@ -115,7 +180,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200)
             GROUP BY dp.defective_id
         )
         SELECT
-            di.id, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
+            di.id, di.business_date, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
             di.location,
             di.created_at, di.completed_at,
             u_creator.name AS created_by_name,
@@ -136,18 +201,17 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200)
     if status_filter:
         where = "WHERE di.status = $2"
         args.append(status_filter)
-    sql = sql.format(where=where)
     async with pool().acquire() as conn:
-        rows = await conn.fetch(sql, *args)
+        rows = await conn.fetch(sql.format(where=where), *args)
     out = []
-    for r in rows:
-        d = dict(r)
-        # asyncpg returns jsonb as str sometimes; normalise
-        if isinstance(d.get("parts"), str):
-            d["parts"] = json.loads(d["parts"])
-        d["created_at"] = d["created_at"].isoformat() if d["created_at"] else None
-        d["completed_at"] = d["completed_at"].isoformat() if d["completed_at"] else None
-        out.append(d)
+    for row in rows:
+        item = dict(row)
+        if isinstance(item.get("parts"), str):
+            item["parts"] = json.loads(item["parts"])
+        item["created_at"] = item["created_at"].isoformat() if item["created_at"] else None
+        item["business_date"] = item["business_date"].isoformat() if item["business_date"] else None
+        item["completed_at"] = item["completed_at"].isoformat() if item["completed_at"] else None
+        out.append(item)
     return out
 
 
@@ -157,6 +221,6 @@ async def summary_counts() -> dict:
             "SELECT status, COUNT(*)::int AS n FROM defective_items GROUP BY status"
         )
     out = {"PENDING": 0, "READY": 0, "COMPLETED": 0}
-    for r in rows:
-        out[r["status"]] = r["n"]
+    for row in rows:
+        out[row["status"]] = row["n"]
     return out
