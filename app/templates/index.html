@@ -912,11 +912,11 @@
             <span>最近一次库存上传</span>
             <button class="btn" @click="uploadLastResult=null" style="padding:.15rem .55rem; font-size:.75rem;">清除</button>
           </div>
-          <div><b x-text="uploadLastResult.inserted"></b> 行写入</div>
-          <div>重新评估 <b x-text="uploadLastResult.reevaluated"></b> 条</div>
+          <div><b x-text="uploadLastResult ? uploadLastResult.inserted : 0"></b> 行写入</div>
+          <div>重新评估 <b x-text="uploadLastResult ? uploadLastResult.reevaluated : 0"></b> 条</div>
           <div>
-            <span class="status-chip chip-READY" x-text="(uploadLastResult.status_flip.to_ready || 0) + ' → READY'"></span>
-            <span class="status-chip chip-PENDING" x-text="(uploadLastResult.status_flip.to_pending || 0) + ' → PENDING'"></span>
+            <span class="status-chip chip-READY" x-text="((uploadLastResult && uploadLastResult.status_flip && uploadLastResult.status_flip.to_ready) || 0) + ' → READY'"></span>
+            <span class="status-chip chip-PENDING" x-text="((uploadLastResult && uploadLastResult.status_flip && uploadLastResult.status_flip.to_pending) || 0) + ' → PENDING'"></span>
           </div>
         </div>
         <div x-show="!uploadLastResult && uploadMsg" class="inv-result warn">
@@ -969,19 +969,19 @@
           <!-- File preview -->
           <div x-show="importPreview" class="file-preview">
             <div>
-              <h4 x-text="importPreview.filename"></h4>
+              <h4 x-text="importPreview ? importPreview.filename : ''"></h4>
               <dl>
-                <dt>格式</dt><dd x-text="importPreview.format"></dd>
-                <template x-if="importPreview.sheet">
-                  <div style="display:contents;"><dt>工作表</dt><dd x-text="importPreview.sheet"></dd></div>
+                <dt>格式</dt><dd x-text="importPreview ? importPreview.format : ''"></dd>
+                <template x-if="importPreview && importPreview.sheet">
+                  <div style="display:contents;"><dt>工作表</dt><dd x-text="importPreview ? importPreview.sheet : ''"></dd></div>
                 </template>
-                <dt>行数</dt><dd x-text="importPreview.rows"></dd>
-                <dt>列数</dt><dd x-text="importPreview.columns"></dd>
-                <dt>检测表头</dt><dd x-text="importPreview.header_detected ? '是' : '否'"></dd>
-                <template x-if="importPreview.date_sample">
-                  <div style="display:contents;"><dt>日期样本</dt><dd x-text="importPreview.date_sample"></dd></div>
+                <dt>行数</dt><dd x-text="importPreview ? importPreview.rows : 0"></dd>
+                <dt>列数</dt><dd x-text="importPreview ? importPreview.columns : 0"></dd>
+                <dt>检测表头</dt><dd x-text="importPreview && importPreview.header_detected ? '是' : '否'"></dd>
+                <template x-if="importPreview && importPreview.date_sample">
+                  <div style="display:contents;"><dt>日期样本</dt><dd x-text="importPreview ? importPreview.date_sample : ''"></dd></div>
                 </template>
-                <dt>预估票数</dt><dd><b x-text="importPreview.estimated_tickets"></b></dd>
+                <dt>预估票数</dt><dd><b x-text="importPreview ? importPreview.estimated_tickets : 0"></b></dd>
               </dl>
             </div>
             <div class="preview-actions">
@@ -999,18 +999,18 @@
               <button class="btn" @click="importResult=null; importPreview=null;" style="padding:.15rem .55rem; font-size:.75rem;">关闭</button>
             </h4>
             <div class="ir-status-line">
-              <span class="ir-tag ready">READY <b x-text="importResult.summary.ready_count || 0"></b></span>
-              <span class="ir-tag pending">PENDING <b x-text="importResult.summary.pending_count || 0"></b></span>
-              <span class="ir-tag failed" x-show="importResult.summary.failed > 0">失败 <b x-text="importResult.summary.failed"></b></span>
-              <span class="ir-tag parse" x-show="importResult.summary.parse_failures_count > 0">解析失败 <b x-text="importResult.summary.parse_failures_count"></b></span>
+              <span class="ir-tag ready">READY <b x-text="(importResult && importResult.summary && importResult.summary.ready_count) || 0"></b></span>
+              <span class="ir-tag pending">PENDING <b x-text="(importResult && importResult.summary && importResult.summary.pending_count) || 0"></b></span>
+              <span class="ir-tag failed" x-show="importResult && importResult.summary && importResult.summary.failed > 0">失败 <b x-text="importResult && importResult.summary ? importResult.summary.failed : 0"></b></span>
+              <span class="ir-tag parse" x-show="importResult && importResult.summary && importResult.summary.parse_failures_count > 0">解析失败 <b x-text="importResult && importResult.summary ? importResult.summary.parse_failures_count : 0"></b></span>
               <span style="font-size:.78rem; color:var(--fg-3);">
-                共 <b x-text="importResult.summary.submitted_tickets"></b> 票 / <b x-text="importResult.summary.submitted_rows"></b> 行
+                共 <b x-text="importResult && importResult.summary ? importResult.summary.submitted_tickets : 0"></b> 票 / <b x-text="importResult && importResult.summary ? importResult.summary.submitted_rows : 0"></b> 行
               </span>
             </div>
-            <div x-show="importResult.successes.length">
-              <b style="font-size:.85rem;">成功 <span x-text="importResult.successes.length"></span> 条 · 点开看详情</b>
+            <div x-show="importResult && importResult.successes && importResult.successes.length">
+              <b style="font-size:.85rem;">成功 <span x-text="importResult && importResult.successes ? importResult.successes.length : 0"></span> 条 · 点开看详情</b>
               <ul class="ir-success-list">
-                <template x-for="s in importResult.successes.slice(0, 50)" :key="s.id">
+                <template x-for="s in (importResult && importResult.successes ? importResult.successes : []).slice(0, 50)" :key="s.id">
                   <li>
                     <a href="#" @click.prevent="goToTicket(s.status, s.id)">
                       #<span x-text="s.id"></span>
@@ -1022,10 +1022,10 @@
                 </template>
               </ul>
             </div>
-            <div x-show="importResult.failures.length" style="margin-top:.5rem;">
-              <b style="font-size:.85rem;">保存失败 <span x-text="importResult.failures.length"></span> 条</b>
+            <div x-show="importResult && importResult.failures && importResult.failures.length" style="margin-top:.5rem;">
+              <b style="font-size:.85rem;">保存失败 <span x-text="importResult && importResult.failures ? importResult.failures.length : 0"></span> 条</b>
               <ul class="ir-failure-list">
-                <template x-for="(f, idx) in importResult.failures.slice(0, 20)" :key="'f-' + idx + '-' + (f.pallet || '')">
+                <template x-for="(f, idx) in (importResult && importResult.failures ? importResult.failures : []).slice(0, 20)" :key="'f-' + idx + '-' + (f.pallet || '')">
                   <li>
                     <span x-text="f.pallet || '—'"></span> →
                     <span class="err-line" x-text="f.error"></span>
@@ -1033,10 +1033,10 @@
                 </template>
               </ul>
             </div>
-            <div x-show="importResult.parse_failures_sample.length" style="margin-top:.5rem;">
-              <b style="font-size:.85rem;">解析失败样本 <span x-text="importResult.summary.parse_failures_count"></span> 条</b>
+            <div x-show="importResult && importResult.parse_failures_sample && importResult.parse_failures_sample.length" style="margin-top:.5rem;">
+              <b style="font-size:.85rem;">解析失败样本 <span x-text="importResult && importResult.summary ? importResult.summary.parse_failures_count : 0"></span> 条</b>
               <ul class="ir-failure-list">
-                <template x-for="p in importResult.parse_failures_sample" :key="'p-' + p.line">
+                <template x-for="p in (importResult && importResult.parse_failures_sample ? importResult.parse_failures_sample : [])" :key="'p-' + p.line">
                   <li>
                     第 <span class="err-line" x-text="p.line"></span> 行
                     <span x-show="p.pallet"> · <span x-text="p.pallet"></span></span>
@@ -1049,11 +1049,11 @@
               <button class="btn" @click="downloadErrorReport()" :disabled="!importErrorReport">
                 下载错误报告（CSV）
               </button>
-              <button class="btn" @click="goTab('ready')" x-show="(importResult.summary.ready_count || 0) > 0">
-                打开 READY（<span x-text="importResult.summary.ready_count"></span>）
+              <button class="btn" @click="goTab('ready')" x-show="((importResult && importResult.summary && importResult.summary.ready_count) || 0) > 0">
+                打开 READY（<span x-text="importResult && importResult.summary ? importResult.summary.ready_count : 0"></span>）
               </button>
-              <button class="btn" @click="goTab('pending')" x-show="(importResult.summary.pending_count || 0) > 0">
-                打开 PENDING（<span x-text="importResult.summary.pending_count"></span>）
+              <button class="btn" @click="goTab('pending')" x-show="((importResult && importResult.summary && importResult.summary.pending_count) || 0) > 0">
+                打开 PENDING（<span x-text="importResult && importResult.summary ? importResult.summary.pending_count : 0"></span>）
               </button>
             </div>
           </div>
