@@ -88,7 +88,7 @@ async def list_defectives(
     return await list_with_parts(status_filter=status, limit=limit)
 
 
-@router.get("/{defective_id}")
+@router.get("/{defective_id:int}")
 async def get_defective(defective_id: int, user: dict = Depends(current_user)):
     items = await list_with_parts()
     for it in items:
