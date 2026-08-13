@@ -101,12 +101,16 @@ async def get_defective(defective_id: int, user: dict = Depends(current_user)):
 async def patch_defective(
     defective_id: int,
     payload: DefectivePatch,
-    user: dict = Depends(require_role("returns", "repair", "admin")),
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """Update editable header fields on a defective_item.
 
     Returns the updated row. Records each changed field in audit_log.
-    Only admin can change sku (sku is a workflow-bearing field).
+    returns / admin can edit every header field (including sku) on every
+    status. repair users get a strict read-only role on this endpoint —
+    their workflow is the dedicated repair view, which only exposes the
+    «完成» button against READY items. (Front-end hides the edit affordances
+    for repair too, but we enforce the matrix server-side regardless.)
     """
     import json as _json
     from app.matcher import evaluate_status as _eval
@@ -118,9 +122,6 @@ async def patch_defective(
     body = payload.model_dump(exclude_unset=True)
     if not body:
         raise HTTPException(400, "no fields to update")
-    # sku is admin-only because changing sku invalidates matches.
-    if "sku" in body and user["role"] != "admin":
-        raise HTTPException(403, "sku change requires admin")
     for k in ("business_date", "pallet_no", "product_name", "location", "sku", "qty"):
         if k in body:
             fields.append(f"{k} = ${idx}")
@@ -135,22 +136,24 @@ async def patch_defective(
         )
         if current is None:
             raise HTTPException(404, "not found")
-        if current["status"] == "COMPLETED" and user["role"] != "admin":
-            raise HTTPException(409, "completed item is locked; admin correction required")
+        # returns / admin can patch on every status, including COMPLETED.
+        # The flow gate is on /complete (which requires repair/admin), not on
+        # header edits — returns still needs to be able to fix mistyped
+        # SKUs after the fact.
         row = await conn.fetchrow(
             f"UPDATE defective_items SET {set_clause} WHERE id = ${idx} RETURNING id, business_date, pallet_no, product_name, location, sku, qty, status",
             *values,
         )
         if row is None:
             raise HTTPException(404, "not found")
-        # Audit: log which fields changed.
+        # Audit: log which fields changed (include actor role for forensics).
         await conn.execute(
             """
             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
             VALUES ($1, 'patch', 'defective_item', $2, $3::jsonb)
             """,
             user["id"], defective_id,
-            _json.dumps({"fields": list(body.keys())}),
+            _json.dumps({"fields": list(body.keys()), "actor_role": user["role"]}),
         )
 
     # Re-evaluate status since sku/qty changes can flip READY/PENDING.
@@ -165,14 +168,14 @@ async def patch_defective(
 @router.put("/{defective_id}/parts")
 async def put_parts(
     defective_id: int,
-    parts: list["PartIn"],
-    user: dict = Depends(require_role("returns", "repair", "admin")),
+    parts: list[PartIn],
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """Replace the entire parts list for a defective_item.
 
-    Used by the edit modal on READY/PENDING/HISTORY rows. After
-    replacing, re-evaluate status since part changes can flip
-    READY/PENDING.
+    returns / admin only. repair is excluded because their workflow is
+    to mark READY items complete via the dedicated repair view; parts
+    edits are a returns/admin responsibility.
     """
     from app.matcher import evaluate_status as _eval
     if not parts:
@@ -182,8 +185,6 @@ async def put_parts(
         current = await conn.fetchrow("SELECT status FROM defective_items WHERE id=$1", defective_id)
         if not current:
             raise HTTPException(404, "not found")
-        if current["status"] == "COMPLETED" and user["role"] != "admin":
-            raise HTTPException(409, "completed item is locked; admin correction required")
         async with conn.transaction():
             await conn.execute("DELETE FROM defective_parts WHERE defective_id=$1", defective_id)
             for p in parts:
@@ -197,7 +198,7 @@ async def put_parts(
                 VALUES ($1, 'put_parts', 'defective_item', $2, $3::jsonb)
                 """,
                 user["id"], defective_id,
-                json.dumps({"count": len(parts)}),
+                json.dumps({"count": len(parts), "actor_role": user["role"]}),
             )
 
     try:
@@ -206,6 +207,45 @@ async def put_parts(
         status = None
 
     return {"id": defective_id, "parts": len(parts), "status": status}
+
+
+@router.delete("/{defective_id}")
+async def delete_defective(
+    defective_id: int,
+    user: dict = Depends(require_role("returns", "admin")),
+):
+    """Hard-delete a defective_item and its parts.
+
+    returns / admin only. repair is excluded; their workflow runs the
+    COMPLETED transition, not history cleanup.
+    """
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            existing = await conn.fetchrow(
+                "SELECT id, status, sku, pallet_no FROM defective_items WHERE id=$1",
+                defective_id,
+            )
+            if existing is None:
+                raise HTTPException(404, "not found")
+            # defensive: cascade deletes parts via FK ON DELETE CASCADE
+            await conn.execute(
+                "DELETE FROM defective_items WHERE id=$1",
+                defective_id,
+            )
+            await conn.execute(
+                """
+                INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                VALUES ($1, 'delete', 'defective_item', $2, $3::jsonb)
+                """,
+                user["id"], defective_id,
+                json.dumps({
+                    "actor_role": user["role"],
+                    "previous_status": existing["status"],
+                    "previous_sku": existing["sku"],
+                    "previous_pallet_no": existing["pallet_no"],
+                }),
+            )
+    return {"id": defective_id, "deleted": True}
 
 
 @router.post("/{defective_id}/complete")
@@ -257,7 +297,7 @@ async def list_pending(user: dict = Depends(current_user)):
 @router.post("/bulk")
 async def bulk_action(
     payload: dict,
-    user: dict = Depends(require_role("repair", "admin", "returns")),
+    user: dict = Depends(require_role("returns", "repair", "admin")),
 ):
     """Apply a bulk action to a set of defective items.
 
@@ -265,13 +305,20 @@ async def bulk_action(
       ids: list[int]                 — required
       action:                          — required
         "recompute"                  re-evaluate status via inventory
-        "mark_complete"              mark READY → COMPLETED  (require role repair/admin)
-        "set_sku"        { sku }     change sku            (admin only)
-        "set_location"   { location } change 仓位          (admin only)
-        "set_product_name" { product_name }                (admin only)
-        "set_product_name" { product_name }                (admin only)
-        "delete"                    remove                (admin only)
+                                     (returns + admin)
+        "mark_complete"              mark READY → COMPLETED
+                                     (repair + admin) — the only bulk action
+                                     available to repair users
+        "set_sku"        { sku }     change sku            (returns + admin)
+        "set_location"   { location } change 仓位           (returns + admin)
+        "set_product_name" { product_name }                (returns + admin)
+        "delete"                    remove                 (returns + admin)
       reason: str (optional) — recorded in audit_log
+
+    The coarse-grained `require_role(...)` keeps the route open for the
+    three roles; per-action checks below enforce the matrix. Per-action
+    gates run BEFORE any DB work so a forbidden action is rejected with
+    a clear 403 even before the per-id loop opens a transaction.
     """
     ids = payload.get("ids") or []
     action = (payload.get("action") or "").strip()
@@ -280,6 +327,20 @@ async def bulk_action(
         raise HTTPException(400, "ids must be a non-empty list")
     if not action:
         raise HTTPException(400, "action is required")
+
+    role = user.get("role")
+    # Per-action matrix. repair only gets mark_complete; returns +
+    # admin can do everything except mark_complete (which stays
+    # repair+admin only — Cc doesn't want returns flipping items to
+    # COMPLETED via the bulk endpoint).
+    if action == "mark_complete":
+        if role not in ("repair", "admin"):
+            raise HTTPException(403, "mark_complete requires repair/admin")
+    elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name"):
+        if role not in ("returns", "admin"):
+            raise HTTPException(403, f"{action} requires returns/admin")
+    else:
+        raise HTTPException(400, f"unknown action {action!r}")
 
     pool_ = pool()
     successes = []
@@ -304,9 +365,6 @@ async def bulk_action(
                         # NOTE: matcher.evaluate_status acquires pool, so do this AFTER
                         # releasing the row's transaction
                     elif action == "mark_complete":
-                        if user["role"] not in ("repair", "admin"):
-                            failures.append({"id": did, "error": "needs repair/admin"})
-                            continue
                         if row["status"] != "READY":
                             failures.append({"id": did, "error": f"status is {row['status']}"})
                             continue
@@ -323,12 +381,9 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_complete', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, json.dumps({"reason": reason}),
+                            user["id"], did, json.dumps({"reason": reason, "actor_role": user["role"]}),
                         )
                     elif action == "set_sku":
-                        if user["role"] != "admin":
-                            failures.append({"id": did, "error": "admin only"})
-                            continue
                         new_sku = (payload.get("sku") or "").strip()
                         if not new_sku:
                             failures.append({"id": did, "error": "sku required"})
@@ -342,12 +397,9 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_set_sku', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, json.dumps({"sku": new_sku, "reason": reason}),
+                            user["id"], did, json.dumps({"sku": new_sku, "reason": reason, "actor_role": user["role"]}),
                         )
                     elif action == "set_location":
-                        if user["role"] != "admin":
-                            failures.append({"id": did, "error": "admin only"})
-                            continue
                         new_loc = (payload.get("location") or "").strip() or None
                         await conn.execute(
                             "UPDATE defective_items SET location=$1 WHERE id=$2",
@@ -358,12 +410,9 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_set_location', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, json.dumps({"location": new_loc, "reason": reason}),
+                            user["id"], did, json.dumps({"location": new_loc, "reason": reason, "actor_role": user["role"]}),
                         )
                     elif action == "set_product_name":
-                        if user["role"] != "admin":
-                            failures.append({"id": did, "error": "admin only"})
-                            continue
                         new_pn = (payload.get("product_name") or "").strip() or None
                         await conn.execute(
                             "UPDATE defective_items SET product_name=$1 WHERE id=$2",
@@ -374,21 +423,19 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_set_product_name', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, json.dumps({"product_name": new_pn, "reason": reason}),
+                            user["id"], did, json.dumps({"product_name": new_pn, "reason": reason, "actor_role": user["role"]}),
                         )
                     elif action == "delete":
-                        if user["role"] != "admin":
-                            failures.append({"id": did, "error": "admin only"})
-                            continue
                         await conn.execute("DELETE FROM defective_items WHERE id=$1", did)
                         await conn.execute(
                             """
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_delete', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, json.dumps({"reason": reason}),
+                            user["id"], did, json.dumps({"reason": reason, "actor_role": user["role"]}),
                         )
                     else:
+                        # Unreachable: validated above.
                         failures.append({"id": did, "error": f"unknown action {action!r}"})
                         continue
                 successes.append({"id": did, "action": action})

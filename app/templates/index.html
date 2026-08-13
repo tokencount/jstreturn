@@ -529,6 +529,256 @@
       .workbench-summary { flex-direction: column; align-items: flex-start; }
     }
 
+    /* ----- Repair simplified view (P3) ----- */
+    /* When the body container has class `repair-view`, show ONLY the
+       repair-only markup. Everything else is hidden by class. Nav
+       buttons, workbench, inventory, users, purchase export, login,
+       etc. all collapse. The repair-only region is its own card list
+       optimised for ONE thing: see Pallet/Location/SKU/part×qty and
+       tap 完成. */
+    .repair-view .nav-btn:not(.repair-keep),
+    .repair-view .workbench-summary,
+    .repair-view .workbench-wrap,
+    .repair-view .mobile-list,
+    .repair-view .mobile-filter-bar,
+    .repair-view .modal,
+    .repair-view form.split,
+    .repair-view .inv-stats,
+    .repair-view .danger-panel,
+    .repair-view .drop-zone,
+    .repair-view .users-panel,
+    .repair-view .purchase-panel,
+    .repair-view .tab-warn,
+    .repair-view .header-extra,
+    .repair-view section:not(.repair-only) {
+      display: none !important;
+    }
+    .repair-view .topnav {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      margin: 0 0 .75rem 0;
+    }
+    .repair-view .header {
+      margin-bottom: 0;
+    }
+    .repair-view .container {
+      padding: var(--space-3) var(--space-3) var(--space-5);
+      max-width: 32rem;
+    }
+
+    /* Pallet cards under .repair-only */
+    .repair-cards { display: flex; flex-direction: column; gap: var(--space-3); }
+    .repair-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: var(--space-4);
+      box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    }
+    .repair-card .rc-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+      margin-bottom: var(--space-3);
+      flex-wrap: wrap;
+    }
+    .repair-card .rc-pallet {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-md);
+      font-weight: 700;
+      color: var(--fg);
+    }
+    .repair-card .rc-meta {
+      display: flex;
+      flex-direction: column;
+      gap: .2rem;
+      margin-bottom: var(--space-3);
+      font-size: var(--fs-sm);
+    }
+    .repair-card .rc-meta .lbl {
+      font-size: var(--fs-xs);
+      color: var(--fg-3);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 600;
+    }
+    .repair-card .rc-meta .val {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-sm);
+      color: var(--fg);
+      word-break: break-all;
+    }
+    .repair-card .rc-parts {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      margin: 0 0 var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      background: #f8fafc;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--line);
+    }
+    .repair-card .rc-part {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .5rem;
+      font-size: var(--fs-sm);
+    }
+    .repair-card .rc-part .pc {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--fg);
+      word-break: break-all;
+      flex: 1;
+    }
+    .repair-card .rc-part .qty {
+      font-weight: 700;
+      color: var(--brand);
+      flex-shrink: 0;
+    }
+    .repair-card .rc-actions {
+      display: flex;
+      gap: var(--space-2);
+    }
+    .repair-card .rc-actions .btn {
+      flex: 1;
+      padding: var(--space-3) var(--space-4);
+      font-size: var(--fs-md);
+      font-weight: 600;
+      border-radius: var(--radius-md);
+    }
+
+    /* Empty state for repair view */
+    .repair-empty {
+      padding: var(--space-5) var(--space-3);
+      text-align: center;
+      color: var(--fg-3);
+      background: var(--panel);
+      border: 1px dashed var(--line);
+      border-radius: var(--radius-lg);
+    }
+
+    /* Compact mobile layout for repair view (≤480px) */
+    @media (max-width: 480px) {
+      .repair-view .container { padding: var(--space-2); }
+      .repair-card { padding: var(--space-3); border-radius: var(--radius-md); }
+      .repair-card .rc-head { margin-bottom: var(--space-2); }
+      .repair-card .rc-meta { margin-bottom: var(--space-2); }
+      .repair-card .rc-parts { padding: var(--space-2); margin-bottom: var(--space-2); }
+      .repair-card .rc-actions .btn { padding: var(--space-3); font-size: var(--fs-base); }
+    }
+
+    /* ============================================================
+       Repair-view (simplified READY cards for the repair role)
+       ============================================================ */
+    .repair-view { display: block; max-width: 100%; min-width: 0; }
+    .repair-view .repair-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--space-3);
+      max-width: 100%;
+      min-width: 0;
+    }
+    .repair-view .repair-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: var(--space-3) var(--space-4);
+      box-shadow: var(--shadow-sm);
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+    .repair-view .repair-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+      gap: var(--space-2);
+      align-items: center;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .repair-view .repair-head .pallet,
+    .repair-view .repair-head .sku {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .repair-view .repair-head .pallet { font-size: var(--fs-md); font-weight: 600; }
+    .repair-view .repair-head .sku { font-size: var(--fs-sm); color: var(--fg-2); }
+    .repair-view .repair-loc {
+      font-size: var(--fs-sm);
+      color: var(--fg-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+    .repair-view .repair-parts {
+      display: flex;
+      flex-direction: column;
+      gap: .25rem;
+      border-top: 1px dashed var(--line);
+      padding-top: var(--space-2);
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .repair-view .repair-part-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-sm);
+      align-items: center;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .repair-view .repair-part-row .pcode {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+      max-width: 100%;
+      word-break: break-all;
+    }
+    .repair-view .repair-part-row .pqty {
+      font-weight: 600;
+      color: var(--brand);
+      white-space: nowrap;
+    }
+    .repair-view .repair-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--space-2);
+      padding-top: var(--space-2);
+      border-top: 1px solid var(--line);
+    }
+    .repair-view .repair-actions .btn {
+      padding: .55rem 1.1rem;
+      font-size: var(--fs-md);
+    }
+    .repair-view-empty {
+      text-align: center;
+      color: var(--fg-3);
+      padding: var(--space-5) 0;
+    }
+    @media (max-width: 480px) {
+      .repair-view .repair-head {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .repair-view .repair-head .sku,
+      .repair-view .repair-head .loc { justify-self: start; }
+    }
+
     /* Sheet-style editable rows */
     .sheet { border: 1px solid var(--line); border-radius: .5rem; overflow: hidden; background: #fff; }
     .sheet-header,
@@ -831,7 +1081,7 @@
   </style>
 </head>
 <body>
-  <div x-data="app()" x-init="init()" x-cloak class="container">
+  <div x-data="app()" x-init="init()" x-cloak class="container" :class="user && user.role === 'repair' ? 'repair-view' : ''">
 
     <!-- Header -->
     <div class="row header">
@@ -903,6 +1153,14 @@
             <path d="M5 21h14"/>
           </svg>
           批量导入
+        </button>
+        <button x-show="user" @click="goTab('purchase')" :class="tab==='purchase' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="4" y="6" width="16" height="13" rx="1.5"/>
+            <path d="M9 10h6M9 13h4"/>
+            <path d="M8 4l1.5 2M16 4l-1.5 2"/>
+          </svg>
+          采购导出
         </button>
       </nav>
 
@@ -1056,18 +1314,18 @@
       </section>
 
       <!-- LIST TABS (READY / PENDING / HISTORY) -->
-      <section x-show="['ready','pending','history'].includes(tab)" x-cloak>
+      <section x-show="['ready','pending','history'].includes(tab) && user && user.role !== 'repair'" x-cloak>
         <!-- Bulk-action bar -->
         <div x-show="selectedIds.size > 0" style="display:flex; flex-wrap:wrap; gap:.5rem; padding:.6rem .85rem; background:var(--brand-soft); border:1px solid #c7d2fe; border-radius:.55rem; align-items:center; margin-bottom:.5rem;">
           <span style="font-weight:600;">已选 <span x-text="selectedIds.size"></span> 项</span>
           <select x-model="bulkAction" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;">
             <option value="">— 选动作 —</option>
             <option value="recompute">重算状态（按当前库存）</option>
-            <option value="mark_complete">标记完成（仅 repair/admin）</option>
-            <option value="set_sku">改 SKU（仅 admin）</option>
-            <option value="set_product_name">改 Product Name（仅 admin）</option>
-            <option value="set_location">改 仓位（仅 admin）</option>
-            <option value="delete">删除（仅 admin）</option>
+            <option value="mark_complete">标记完成（repair/admin）</option>
+            <option value="set_sku">改 SKU（returns/repair/admin）</option>
+            <option value="set_product_name">改 Product Name（returns/repair/admin）</option>
+            <option value="set_location">改 仓位（returns/repair/admin）</option>
+            <option value="delete">删除（returns/repair/admin）</option>
           </select>
           <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <input x-show="bulkAction === 'set_product_name'" x-model="bulkArg.product_name" placeholder="新 product_name" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
@@ -1168,8 +1426,12 @@
                       <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
                     </td>
                     <td>
-                      <button x-show="row.pi===0 && row.it.status!=='COMPLETED' && user"
+                      <!-- returns / repair / admin can all edit every status, including COMPLETED -->
+                      <button x-show="row.pi===0 && user"
                               @click.stop="openEdit(row.it)" class="btn" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">改</button>
+                      <button x-show="row.pi===0 && user"
+                              @click.stop="confirmDelete(row.it.id, row.it.pallet_no)"
+                              class="btn btn-danger" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">删</button>
                       <button x-show="row.pi===0 && row.it.status==='READY' && user && ['repair','admin'].includes(user.role)"
                               @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">完成</button>
                     </td>
@@ -1238,8 +1500,11 @@
                   </ul>
                 </details>
                 <div class="card-actions">
+                  <!-- returns / repair / admin can all edit every status, including COMPLETED -->
                   <button class="btn" @click="openEdit(it)"
-                          x-show="it.status !== 'COMPLETED' && user">改</button>
+                          x-show="user">改</button>
+                  <button class="btn btn-danger" @click="confirmDelete(it.id, it.pallet_no)"
+                          x-show="user">删</button>
                   <button class="btn btn-primary" @click="complete(it.id)"
                           x-show="it.status === 'READY' && user && ['repair','admin'].includes(user.role)">完成</button>
                 </div>
@@ -1285,6 +1550,53 @@
               <button class="btn btn-primary" @click="closeMobileFilters()">完成</button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <!-- REPAIR SIMPLIFIED VIEW (P3) -->
+      <section x-show="user && user.role === 'repair'"
+               x-cloak
+               class="repair-only"
+               aria-label="简化维修视图">
+        <div class="repair-cards">
+          <template x-for="it in (items || []).filter(i => i.status === 'READY')" :key="'rep-' + it.id">
+            <article class="repair-card">
+              <div class="rc-head">
+                <span class="rc-pallet" x-text="it.pallet_no"></span>
+                <span class="status-chip chip chip-READY" x-text="'READY'"></span>
+              </div>
+              <div class="rc-meta">
+                <div>
+                  <div class="lbl">Location</div>
+                  <div class="val" x-text="it.location || '—'"></div>
+                </div>
+                <div>
+                  <div class="lbl">SKU</div>
+                  <div class="val" x-text="it.sku"></div>
+                </div>
+              </div>
+              <div class="rc-parts">
+                <template x-for="p in (it.parts || []).filter(p => (p.part_code || '').trim())" :key="'repp-' + it.id + '-' + p.part_code">
+                  <div class="rc-part">
+                    <span class="pc" :title="p.part_code" x-text="p.part_code"></span>
+                    <span class="qty" x-text="p.need || p.qty || 0"></span>
+                  </div>
+                </template>
+                <template x-if="!(it.parts && it.parts.length)">
+                  <div class="rc-part">
+                    <span class="pc">—</span>
+                    <span class="qty">0</span>
+                  </div>
+                </template>
+              </div>
+              <div class="rc-actions">
+                <button class="btn btn-primary" @click="complete(it.id)">完成</button>
+              </div>
+            </article>
+          </template>
+          <template x-if="!(items || []).some(i => i.status === 'READY')">
+            <div class="repair-empty">暂无 READY 可维修订单。</div>
+          </template>
         </div>
       </section>
 
@@ -1573,6 +1885,77 @@
       </div>
       </section>
 
+      <!-- PURCHASE EXPORT TAB -->
+      <section x-show="tab==='purchase'" x-cloak>
+        <div class="hero-card" style="background:linear-gradient(135deg,#0d9488 0%,#0f766e 100%);">
+          <div>
+            <h2>采购配件导出</h2>
+            <p>
+              拉取选定业务日期的 <b>PENDING</b> 退件单里 <b>需要采购的 part</b> 数量。
+              按 part_code 前缀分到 HS（HS168-自营） / HE（HE168-自营仓） / HU（HU168-自营仓）三张 sheet。
+              其他前缀不导出，会在右下方 “跳过提示” 里列出。
+            </p>
+          </div>
+        </div>
+
+        <div class="panel" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:1rem; align-items:end;">
+          <div>
+            <label>业务日期（Asia/Kuala_Lumpur）</label>
+            <input type="date" x-model="purchaseDate" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" @click="exportPurchase()" :disabled="purchaseBusy" x-text="purchaseBusy ? '生成中…' : '下载 xlsx'"></button>
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button class="btn" @click="purchaseDate = kltToday()">今天 (KLT)</button>
+          </div>
+        </div>
+
+        <div x-show="purchaseResult" class="alert" :class="purchaseOk ? 'alert-ok' : 'alert-bad'" x-text="purchaseResult"></div>
+
+        <div x-show="purchaseSummary" class="panel" style="margin-top:.85rem;">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:600;">
+                上次导出 <span x-text="purchaseSummary.business_date || ''"></span>
+                · <span x-text="purchaseSummary.row_count || 0"></span> 行
+              </div>
+              <div style="font-size:.8rem; color:var(--fg-3); margin-top:.15rem;">
+                Warehouse 分发：
+                HS: <b x-text="purchaseSummary.by_warehouse ? purchaseSummary.by_warehouse.HS : 0"></b> ·
+                HE: <b x-text="purchaseSummary.by_warehouse ? purchaseSummary.by_warehouse.HE : 0"></b> ·
+                HU: <b x-text="purchaseSummary.by_warehouse ? purchaseSummary.by_warehouse.HU : 0"></b>
+              </div>
+            </div>
+            <div x-show="purchaseSummary.skipped_count > 0" class="alert alert-warn" style="margin:0;">
+              ⚠ 跳过 <b x-text="purchaseSummary.skipped_count"></b> 个 part（不在 HS/HE/HU）：
+              <code style="margin-left:.35rem;" x-text="(purchaseSummary.skipped_prefixes || []).join(', ')"></code>
+              <details style="margin-top:.4rem;">
+                <summary style="cursor:pointer; color:var(--brand);">查看被跳过的明细</summary>
+                <table class="def-table" style="margin-top:.5rem;">
+                  <thead><tr><th>part_code</th><th>qty</th></tr></thead>
+                  <tbody>
+                    <template x-for="(row, idx) in (purchaseSummary.skipped_part_codes || [])" :key="'sk-' + idx">
+                      <tr><td x-text="row[0]"></td><td x-text="row[1]"></td></tr>
+                    </template>
+                    <template x-if="!(purchaseSummary.skipped_part_codes || []).length">
+                      <tr><td colspan="2" style="color:var(--fg-3);">无</td></tr>
+                    </template>
+                  </tbody>
+                </table>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <p style="font-size:.8rem; color:var(--fg-3); margin-top:.75rem;">
+          导出按 <b>part_code 缺购数量 = max(0, 需求 −（在库 − 已被 READY 单占用））</b> 计算再聚合。
+          同一 part_code 跨多张票时求和。COMPLETED 不参与。
+        </p>
+      </section>
+
   <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
   <div x-show="bulkPartsOpen" x-cloak class="modal-back" @click.self="closeBulkParts()" @keydown.escape.window="closeBulkParts()">
     <div class="modal-card" style="max-width:32rem;">
@@ -1663,7 +2046,7 @@ HS-A-OU8035BK-008</pre>
           <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving || editModal.savingParts" x-text="editModal.saving ? '保存中…' : '保存 ticket'"></button>
         </div>
       </div>
-      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">SKU 需要 admin 权限。</span></p>
+      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">所有角色均可编辑头/配件；完成仍需 repair/admin。</span></p>
     </div>
   </div>
     </div>
@@ -1897,22 +2280,26 @@ function app() {
 
     async init() {
       // Dev fixture: ?fixture=1 skips the auth check so we can exercise the
-      // UI without a live database. Off by default.
-      var _isFixture = (new URLSearchParams(window.location.search)).get('fixture') === '1';
+      // UI without a live database. Off by default. ?role=repair / ?role=admin
+      // / ?role=returns picks the role the fixture should assume.
+      var _qp = (typeof window !== 'undefined') ? (new URLSearchParams(window.location.search)) : null;
+      var _isFixture = _qp && _qp.get('fixture') === '1';
+      var _fixtureRole = (_qp && (_qp.get('role') || '')) || 'admin';
+      if (['returns', 'repair', 'admin'].indexOf(_fixtureRole) === -1) _fixtureRole = 'admin';
       try {
         const r = await fetch('/api/auth/me', { credentials: 'include' });
         if (r.ok) {
           this.user = await r.json();
         } else if (_isFixture) {
-          // Fixture mode: assume admin user so the rest of the page renders.
-          this.user = { id: 1, name: 'fixture', role: 'admin' };
+          // Fixture mode: assume the requested role so the rest of the page renders.
+          this.user = { id: 1, name: 'fixture', role: _fixtureRole };
         } else {
           window.location.replace('/login');
           return;
         }
       } catch (e) {
         if (_isFixture) {
-          this.user = { id: 1, name: 'fixture', role: 'admin' };
+          this.user = { id: 1, name: 'fixture', role: _fixtureRole };
         } else {
           window.location.replace('/login');
           return;
@@ -2019,6 +2406,116 @@ function app() {
       if (name === 'ready') this.loadList('READY');
       else if (name === 'pending') this.loadList('PENDING');
       else if (name === 'history') this.loadList('COMPLETED');
+      else if (name === 'purchase') {
+        // default the date picker to today in Asia/Kuala_Lumpur
+        if (!this.purchaseDate) this.purchaseDate = this.kltToday();
+      }
+    },
+
+    /* ========================================================
+       Purchase export (PENDING parts → HS/HE/HU ZIP)
+       ======================================================== */
+    purchaseDate: '',
+    purchaseBusy: false,
+    purchaseResult: '',
+    purchaseOk: false,
+    purchaseSummary: null,
+
+    kltToday() {
+      // Asia/Kuala_Lumpur (UTC+8) “today” as YYYY-MM-DD string
+      try {
+        const fmt = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+        return fmt.format(new Date());
+      } catch (e) {
+        // fallback: local date
+        const d = new Date();
+        const off = d.getTimezoneOffset() * 60000;
+        return new Date(d.getTime() - off).toISOString().slice(0, 10);
+      }
+    },
+
+    async fetchPurchaseSummary() {
+      // JSON-only peek so the UI can show skipped-part hints without downloading.
+      if (!this.purchaseDate) this.purchaseDate = this.kltToday();
+      try {
+        const r = await fetch('/api/exports/purchase?business_date=' + encodeURIComponent(this.purchaseDate) + '&summary_only=true', { credentials: 'include' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        this.purchaseSummary = await r.json();
+        this.purchaseOk = true;
+        this.purchaseResult = '✓ 汇总已更新';
+      } catch (e) {
+        this.purchaseSummary = null;
+        this.purchaseOk = false;
+        this.purchaseResult = '✗ ' + (e.message || '汇总失败');
+      }
+    },
+
+    async exportPurchase() {
+      if (this.purchaseBusy) return;
+      if (!this.purchaseDate) this.purchaseDate = this.kltToday();
+      this.purchaseBusy = true;
+      this.purchaseResult = '';
+      this.purchaseSummary = null;
+      try {
+        const r = await fetch('/api/exports/purchase?business_date=' + encodeURIComponent(this.purchaseDate), { credentials: 'include' });
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(t || ('HTTP ' + r.status));
+        }
+        // Try to read X-Export-Summary header before consuming the body
+        const summaryHdr = r.headers.get('X-Export-Summary');
+        if (summaryHdr) {
+          try { this.purchaseSummary = JSON.parse(summaryHdr); } catch (_) {}
+        }
+        const skipped = r.headers.get('X-Export-Skipped-Prefixes') || '';
+        const skipCount = parseInt(r.headers.get('X-Export-Skipped-Count') || '0', 10);
+        const warehouses = r.headers.get('X-Export-Warehouses-Included') || '';
+        const rowCount = parseInt(r.headers.get('X-Export-Row-Count') || '0', 10);
+        const cd = r.headers.get('Content-Disposition') || '';
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // extract filename from Content-Disposition (UTF-8 encoded or plain)
+        let fname = '采购配件-' + this.purchaseDate + '.zip';
+        const m = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)/i);
+        if (m && m[1]) {
+          try { fname = decodeURIComponent(m[1]); } catch (_) { fname = m[1]; }
+        }
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        let msg = '✓ 已下载 ' + fname + ' · ' + rowCount + ' 行';
+        if (warehouses) msg += '（含 ' + warehouses + '）';
+        if (skipCount > 0) msg += '· 跳过 ' + skipCount + ' 个 part（前缀：' + (skipped || '—') + '）';
+        this.purchaseResult = msg;
+        this.purchaseOk = true;
+      } catch (e) {
+        this.purchaseResult = '✗ ' + (e.message || '下载失败');
+        this.purchaseOk = false;
+      } finally {
+        this.purchaseBusy = false;
+      }
+    },
+
+    async confirmDelete(id, palletNo) {
+      if (!confirm('确认删除 #' + id + (palletNo ? ' (' + palletNo + ')' : '') + '？\n（会同时删除其所有配件，该操作会写入 audit_log。）')) return;
+      try {
+        const r = await this.api('/api/defectives/' + id, { method: 'DELETE' });
+        // Re-load whichever tab we're on.
+        if (this.tab === 'ready' || this.tab === 'pending' || this.tab === 'history') {
+          await this.loadList(this.tab.toUpperCase());
+        }
+        await this.loadCounts();
+        this.purchaseResult = this.purchaseResult; // noop, just to keep reactivity hot
+      } catch (e) {
+        alert('删除失败: ' + (e.message || ''));
+      }
     },
 
     goToTicket(status, id) {
@@ -2710,11 +3207,14 @@ function app() {
 (function () {
   var cur = document.querySelector('[x-data]');
   if (!cur) return;
+  var _qp = (new URLSearchParams(window.location.search));
+  var _role = _qp.get('role') || 'admin';
+  if (['returns','repair','admin'].indexOf(_role) === -1) _role = 'admin';
   var apply = function () {
     var a = Alpine.$data(cur);
     if (!a || !a.items) return setTimeout(apply, 30);
     var now = new Date().toISOString().slice(0, 10);
-    a.user = { id: 1, name: 'fixture', role: 'admin' };
+    a.user = { id: 1, name: 'fixture', role: _role };
     a.counts = { PENDING: 4, READY: 5, COMPLETED: 6 };
     a.items = [
       { id: 1, status: 'READY', pallet_no: 'PLT-2026-001', sku: 'SKU-OU8035BK',
