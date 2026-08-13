@@ -1,4 +1,4 @@
-"""Bulk import of defective items from CSV.
+"""Bulk import of defective items from CSV or XLSX.
 
 CSV / Excel format — one row per part, pallet_no repeats within a group:
 
@@ -30,6 +30,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
+from openpyxl import load_workbook
 
 from app.auth import require_role
 from app.db import pool
@@ -54,6 +55,37 @@ def _split_csv(text: str):
         cells = [(c or "").strip() for c in row]
         if any(cells):
             yield cells
+
+
+def _cell_text(value) -> str:
+    """Normalize an XLSX cell to the same text representation as CSV."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        if value.time() == datetime.min.time():
+            return value.date().isoformat()
+        return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _split_xlsx(raw: bytes):
+    """Read non-empty rows from the first worksheet of an XLSX workbook."""
+    try:
+        workbook = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    except Exception as exc:
+        raise HTTPException(400, f"invalid .xlsx file: {exc}") from exc
+    try:
+        sheet = workbook.worksheets[0]
+        for row in sheet.iter_rows(values_only=True):
+            cells = [_cell_text(value) for value in row]
+            if any(cells):
+                yield cells
+    finally:
+        workbook.close()
 
 
 def _looks_header(row) -> bool:
@@ -206,16 +238,19 @@ async def _upload_defectives_impl(
     file: UploadFile,
     user: dict,
 ):
-    if not file.filename.lower().endswith((".csv", ".txt")):
-        raise HTTPException(400, "must be .csv or .txt")
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".csv", ".txt", ".xlsx")):
+        raise HTTPException(400, "must be .csv, .txt, or .xlsx")
 
     raw = await file.read()
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text = raw.decode("gb18030", errors="replace")
-
-    rows = list(_split_csv(text))
+    if filename.endswith(".xlsx"):
+        rows = list(_split_xlsx(raw))
+    else:
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw.decode("gb18030", errors="replace")
+        rows = list(_split_csv(text))
     if not rows:
         raise HTTPException(400, "empty file")
 

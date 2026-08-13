@@ -521,20 +521,20 @@
       <div x-show="tab==='import'" class="panel">
         <h2 style="font-size:1.1rem; margin:0 0 .5rem;">📥 批量导入退件单</h2>
         <p style="font-size:.875rem; color:var(--fg-3); margin:0 0 .75rem;">
-          一个 CSV 文件，多张退件单。同一张 <code>pallet_no</code> 多行 = 多配件。
+          一个 CSV 或 XLSX 文件，多张退件单。同一张 <code>pallet_no</code> 多行 = 多配件。
           <a href="/api/imports/template" @click.prevent="downloadTemplate()" style="color:var(--brand); margin-left:.35rem;">📄 下載模板</a>
         </p>
 
         <div style="background:var(--amber-bg); padding:.65rem .85rem; border-radius:.5rem; font-size:.85rem; color:var(--amber); margin-bottom:1rem;">
-          ⚠  CSV 列认 <b>DATE, PALLET, 次品仓位, 商品名称, SKU, part_code, part_quantity</b>（你的实际格式）<br>
+          ⚠  CSV/XLSX 列认 <b>DATE, PALLET, 次品仓位, 商品名称, SKU, part_code, part_quantity</b>（你的实际格式）<br>
           也认英文 <code>pallet_no, product_name, sku, qty, location, part_code, part_name, part_qty</code>。<br>
           同 <b>pallet</b> 多行 = 同张单多 part。次品仓位 = 仓位 / location（存档后可批量修改）。
         </div>
 
         <div class="split-actions" style="margin-bottom:1rem;">
           <label class="btn btn-primary" style="cursor:pointer;">
-            📂 选择 CSV 文件
-            <input type="file" accept=".csv,.txt" @change="uploadImport($event)" style="display:none;" />
+            📂 选择 CSV / XLSX 文件
+            <input type="file" accept=".csv,.txt,.xlsx" @change="uploadImport($event)" style="display:none;" />
           </label>
           <span x-show="importingFile" style="align-self:center; font-size:.85rem; color:var(--fg-3);">上传中…</span>
         </div>

@@ -1,7 +1,10 @@
 import unittest
+import io
 from datetime import date
 
-from app.routers.imports import _group_tickets, _parse_business_date
+from openpyxl import Workbook
+
+from app.routers.imports import _group_tickets, _parse_business_date, _split_xlsx
 
 
 class ImportGroupingTests(unittest.TestCase):
@@ -39,3 +42,17 @@ class ImportDateTests(unittest.TestCase):
     def test_invalid_date_is_rejected(self):
         with self.assertRaises(ValueError):
             _parse_business_date("not-a-date")
+
+
+class ImportXlsxTests(unittest.TestCase):
+    def test_first_sheet_rows_and_excel_dates_are_normalized(self):
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.append(["DATE", "PALLET", "SKU"])
+        sheet.append([date(2026, 8, 13), "P-1", "SKU-1"])
+        output = io.BytesIO()
+        workbook.save(output)
+        self.assertEqual(
+            list(_split_xlsx(output.getvalue())),
+            [["DATE", "PALLET", "SKU"], ["2026-08-13", "P-1", "SKU-1"]],
+        )
