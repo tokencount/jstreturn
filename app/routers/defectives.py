@@ -443,10 +443,6 @@ async def filter_list(
     sku: Optional[str] = None,
     pallet: Optional[str] = None,
     location: Optional[str] = Query(None, description="substring against 次品仓位"),
-    business_date: Optional[date] = None,
-    product: Optional[str] = Query(None, description="substring against product_name"),
-    part_code: Optional[str] = Query(None, description="substring against part_code"),
-    part_name: Optional[str] = Query(None, description="substring against part_name"),
     is_pending: Optional[bool] = Query(None, description="if true, only those with at least one missing part"),
     limit: int = Query(500, ge=1, le=2000),
 ):
@@ -473,28 +469,15 @@ async def filter_list(
             f"AND (dp_search.part_code ILIKE ${iq} OR dp_search.part_name ILIKE ${iq})))"
         )
     if sku:
-        args.append(f"%{sku}%")
-        where.append(f"di.sku ILIKE ${len(args)}")
+        args.append(sku)
+        where.append(f"di.sku = ${len(args)}")
     if pallet:
-        args.append(f"%{pallet}%")
-        where.append(f"di.pallet_no ILIKE ${len(args)}")
+        args.append(pallet)
+        where.append(f"di.pallet_no = ${len(args)}")
     if location:
         like = f"%{location}%"
         args.append(like)
         where.append(f"di.location ILIKE ${len(args)}")
-    if business_date:
-        args.append(business_date)
-        where.append(f"di.business_date = ${len(args)}")
-    if product:
-        args.append(f"%{product}%")
-        where.append(f"di.product_name ILIKE ${len(args)}")
-    for field, value in (("part_code", part_code), ("part_name", part_name)):
-        if value:
-            args.append(f"%{value}%")
-            where.append(
-                f"EXISTS (SELECT 1 FROM defective_parts dp_filter "
-                f"WHERE dp_filter.defective_id = di.id AND dp_filter.{field} ILIKE ${len(args)})"
-            )
     if is_pending:
         where.append(
             "EXISTS (SELECT 1 FROM defective_parts dp "
