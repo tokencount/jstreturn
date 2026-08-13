@@ -439,7 +439,7 @@ async def bulk_action(
 async def filter_list(
     user: dict = Depends(current_user),
     status: Optional[str] = Query(None, pattern="^(PENDING|READY|COMPLETED)$"),
-    q: Optional[str] = Query(None, description="substring against pallet_no/sku/product_name/location"),
+    q: Optional[str] = Query(None, description="substring against pallet_no/sku/product_name/location/part_code/part_name"),
     sku: Optional[str] = None,
     pallet: Optional[str] = None,
     location: Optional[str] = Query(None, description="substring against 次品仓位"),
@@ -463,7 +463,10 @@ async def filter_list(
         iq = len(args)
         where.append(
             f"(di.pallet_no ILIKE ${iq} OR di.sku ILIKE ${iq} "
-            f"OR di.product_name ILIKE ${iq} OR di.location ILIKE ${iq})"
+            f"OR di.product_name ILIKE ${iq} OR di.location ILIKE ${iq} "
+            f"OR EXISTS (SELECT 1 FROM defective_parts dp_search "
+            f"WHERE dp_search.defective_id = di.id "
+            f"AND (dp_search.part_code ILIKE ${iq} OR dp_search.part_name ILIKE ${iq})))"
         )
     if sku:
         args.append(sku)
@@ -498,7 +501,7 @@ async def filter_list(
             GROUP BY dp.defective_id
         )
         SELECT
-            di.id, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
+            di.id, di.business_date, di.pallet_no, di.product_name, di.sku, di.qty, di.status,
             di.location, di.created_at, di.completed_at,
             u_creator.name AS created_by_name,
             u_completer.name AS completed_by_name,

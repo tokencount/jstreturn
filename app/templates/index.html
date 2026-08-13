@@ -433,6 +433,12 @@
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='ready' ? 'background:#dcfce7;color:#166534;' : ''">🟢 <a href="#" @click.prevent="tab='ready';loadList('READY')" style="text-decoration:none;color:inherit;">READY</a></span>
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='pending' ? 'background:#fee2e2;color:#991b1b;' : ''">🔴 <a href="#" @click.prevent="tab='pending';loadList('PENDING')" style="text-decoration:none;color:inherit;">PENDING</a></span>
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='history' ? 'background:#f1f5f9;color:#475569;' : ''">📜 <a href="#" @click.prevent="tab='history';loadList('COMPLETED')" style="text-decoration:none;color:inherit;">COMPLETED</a></span>
+          <div x-show="['ready','pending'].includes(tab)" style="display:flex; gap:.35rem; align-items:center; flex:1; max-width:28rem;">
+            <input x-model="listSearch" @input.debounce.300ms="searchList()" @keydown.escape="listSearch='';searchList()"
+                   type="search" placeholder="搜索 Pallet / SKU / 商品 / 仓位 / 配件编码"
+                   style="width:100%; padding:.4rem .65rem; border:1px solid var(--line); border-radius:.35rem;" />
+            <button x-show="listSearch" class="btn" @click="listSearch='';searchList()">清除</button>
+          </div>
           <span style="margin-left:auto;">
             <button class="btn" @click="toggleSelectAll()">全选 / 反选</button>
           </span>
@@ -761,6 +767,8 @@ function app() {
     tab: 'create',
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
+    listSearch: '',
+    listStatus: '',
     get expandedRows() {
       // Flatten items × parts into one row per part for the table view.
       // ticket-info columns are shown only on the first row (pi === 0).
@@ -934,9 +942,21 @@ function app() {
 
     async loadList(status) {
       if (!this.user) return;
+      this.listStatus = status;
+      if (status === 'COMPLETED') this.listSearch = '';
       try {
-        this.items = await this.api('/api/defectives?status=' + status + '&limit=200');
+        const q = this.listSearch.trim();
+        const endpoint = q && status !== 'COMPLETED'
+          ? '/api/defectives/filter?status=' + status + '&q=' + encodeURIComponent(q) + '&limit=500'
+          : '/api/defectives?status=' + status + '&limit=200';
+        this.items = await this.api(endpoint);
       } catch (e) {}
+    },
+
+    async searchList() {
+      if (!['READY', 'PENDING'].includes(this.listStatus)) return;
+      this.clearSelection();
+      await this.loadList(this.listStatus);
     },
 
     async loadSummary() {
