@@ -106,10 +106,14 @@ async def login_page(request: Request):
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
+        # Dev fixture: ?fixture=1 injects mocked items so mobile/desktop
+        # layout can be exercised without a live database. Off by default
+        # in production.
+        fixture = request.query_params.get("fixture") == "1"
         return templates.TemplateResponse(
             request,
             "index.html",
-            {"version": VERSION},
+            {"version": VERSION, "fixture": fixture},
         )
     except Exception as e:
         log.exception("template render failed")

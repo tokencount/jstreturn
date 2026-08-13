@@ -11,6 +11,7 @@
     /* self-contained CSS — no external CDN */
     :root {
       color-scheme: light;
+      /* Design tokens — shared by desktop + mobile */
       --fg: #1e293b;
       --fg-2: #475569;
       --fg-3: #94a3b8;
@@ -29,6 +30,33 @@
       --ok-bg: #dcfce7;
       --row-pending: rgba(254, 226, 226, .25);
       --row-ready: rgba(220, 252, 231, .18);
+
+      /* Extended design tokens (P2 mobile) */
+      --radius-xs: .25rem;
+      --radius-sm: .35rem;
+      --radius-md: .5rem;
+      --radius-lg: .75rem;
+      --radius-xl: 1rem;
+      --radius-pill: 999px;
+
+      --fs-xs: .68rem;
+      --fs-sm: .75rem;
+      --fs-base: .85rem;
+      --fs-md: .95rem;
+      --fs-lg: 1.1rem;
+      --fs-xl: 1.4rem;
+
+      --space-1: .25rem;
+      --space-2: .5rem;
+      --space-3: .75rem;
+      --space-4: 1rem;
+      --space-5: 1.5rem;
+
+      --shadow-sm: 0 1px 2px rgba(15,23,42,.06);
+      --shadow-md: 0 4px 12px rgba(15,23,42,.08);
+
+      --mobile-bar-height: 3.5rem;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
     *,*::before,*::after { box-sizing: border-box; }
     html,body { margin: 0; padding: 0; }
@@ -204,8 +232,280 @@
     .split-footer-summary { font-size: .8rem; color: var(--fg-3); }
     .split-footer-summary b { color: var(--fg); }
     .split-footer-actions { display: flex; gap: .5rem; }
+
+    /* ============================================================
+       P2: Mobile card view + sticky bottom filter bar
+       Desktop (>720px): existing workbench table is shown.
+       Mobile (≤720px): workbench-table is hidden; mobile-cards are
+       shown; bottom sticky filter bar is shown.
+       ============================================================ */
+    .mobile-list { display: none; }
+    .mobile-cards-empty {
+      text-align: center; color: var(--fg-3);
+      padding: var(--space-5) 0;
+    }
+    .mobile-filter-bar { display: none; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: var(--space-3) var(--space-4);
+      box-shadow: var(--shadow-sm);
+    }
+    .card + .card { margin-top: var(--space-3); }
+    .card-row-1 {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+      gap: var(--space-2);
+      align-items: center;
+    }
+    .card-row-2 {
+      display: flex;
+      gap: var(--space-2);
+      margin-top: var(--space-2);
+      font-size: var(--fs-sm);
+      color: var(--fg-2);
+      min-width: 0;
+    }
+    .card-row-2 .ellipsis {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .card-row-2 .ellipsis.product { flex: 2 1 auto; }
+    .card-row-1 .pallet {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-md);
+      font-weight: 600;
+      color: var(--fg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-row-1 .sku {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-sm);
+      color: var(--fg-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-row-1 .chip {
+      justify-self: end;
+    }
+    .card-meta {
+      display: flex;
+      gap: var(--space-2);
+      font-size: var(--fs-xs);
+      color: var(--fg-3);
+      margin-top: var(--space-2);
+    }
+    .card-meta .lbl { color: var(--fg-3); }
+    .card-meta .val { color: var(--fg); font-weight: 500; }
+    .card-actions {
+      display: flex;
+      gap: var(--space-2);
+      justify-content: flex-end;
+      margin-top: var(--space-3);
+    }
+    .card-actions .btn {
+      padding: .3rem .65rem;
+      font-size: var(--fs-sm);
+    }
+    .parts-toggle {
+      margin-top: var(--space-2);
+      padding-top: var(--space-2);
+      border-top: 1px dashed var(--line);
+    }
+    .parts-toggle > summary {
+      list-style: none;
+      cursor: pointer;
+      font-size: var(--fs-sm);
+      color: var(--brand);
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      user-select: none;
+    }
+    .parts-toggle > summary::-webkit-details-marker { display: none; }
+    .parts-toggle > summary::before {
+      content: '▸';
+      display: inline-block;
+      transition: transform .15s ease;
+      color: var(--fg-3);
+    }
+    .parts-toggle[open] > summary::before { transform: rotate(90deg); }
+    .parts-toggle > summary .count {
+      color: var(--fg-3);
+      font-weight: 400;
+    }
+    .parts-list {
+      list-style: none;
+      margin: var(--space-2) 0 0;
+      padding: 0;
+    }
+    .parts-list li {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      column-gap: var(--space-2);
+      row-gap: 2px;
+      padding: var(--space-2) 0;
+      border-bottom: 1px solid var(--line);
+      font-size: var(--fs-sm);
+      grid-template-areas:
+        'code stock mark'
+        'name qty mark';
+    }
+    .parts-list li:last-child { border-bottom: 0; }
+    .parts-list .pcode {
+      grid-area: code;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-sm);
+      color: var(--fg);
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .parts-list .pname {
+      grid-area: name;
+      color: var(--fg-2);
+      font-size: var(--fs-xs);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .parts-list .pstock {
+      grid-area: stock;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-xs);
+      color: var(--fg-2);
+      white-space: nowrap;
+    }
+    .parts-list .pqty {
+      grid-area: qty;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-xs);
+      color: var(--fg-3);
+      white-space: nowrap;
+      text-align: right;
+    }
+    .parts-list .pmark {
+      grid-area: mark;
+      align-self: center;
+      font-size: var(--fs-md);
+      line-height: 1;
+    }
+    .parts-list .pmark.ok { color: var(--green); }
+    .parts-list .pmark.bad { color: var(--red); }
+
+    /* Chip reuse */
+    .chip {
+      display: inline-flex; align-items: center;
+      font-size: var(--fs-xs);
+      padding: .15rem .6rem;
+      border-radius: var(--radius-pill);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .chip-PENDING  { background: #fee2e2; color: #991b1b; }
+    .chip-READY    { background: #dcfce7; color: #166534; }
+    .chip-COMPLETED{ background: #f1f5f9; color: #475569; }
+
     @media (max-width: 720px) {
       .split { grid-template-columns: 1fr; }
+      body { padding-bottom: calc(var(--mobile-bar-height) + var(--safe-bottom)); }
+      .desktop-only { display: none !important; }
+
+      /* Hide desktop workbench table on mobile */
+      .workbench-wrap { display: none !important; }
+
+      /* Show mobile cards */
+      .mobile-list { display: block; }
+      .mobile-list .row-list { display: grid; gap: var(--space-3); }
+
+      /* Show sticky mobile filter bar at the bottom */
+      .mobile-filter-bar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: var(--space-2);
+        position: fixed;
+        left: 0; right: 0;
+        bottom: 0;
+        padding: var(--space-2) var(--space-3) calc(var(--space-2) + var(--safe-bottom));
+        background: var(--panel);
+        border-top: 1px solid var(--line);
+        box-shadow: 0 -2px 12px rgba(15,23,42,.08);
+        z-index: 30;
+      }
+      .mobile-filter-bar input[type=search] {
+        height: 2.4rem;
+        padding: 0 var(--space-3);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        font-size: var(--fs-md);
+      }
+      .mobile-filter-bar button {
+        height: 2.4rem;
+        padding: 0 var(--space-4);
+        border-radius: var(--radius-md);
+        font-size: var(--fs-sm);
+        font-weight: 600;
+        border: 0;
+        background: var(--brand);
+        color: var(--brand-fg);
+        cursor: pointer;
+      }
+
+      /* In the mobile filter sheet, render a compact summary row. */
+      .mobile-filter-sheet {
+        position: fixed; inset: 0; background: rgba(15,23,42,.45);
+        z-index: 40;
+        display: flex; align-items: flex-end; justify-content: center;
+        padding: var(--space-3);
+      }
+      .mobile-filter-sheet .sheet-card {
+        background: var(--panel);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        width: 100%;
+        max-width: 32rem;
+        max-height: 85vh;
+        overflow-y: auto;
+        padding: var(--space-4);
+      }
+      .mobile-filter-sheet h3 {
+        margin: 0 0 var(--space-3);
+        font-size: var(--fs-md);
+        font-weight: 600;
+      }
+      .mobile-filter-sheet label {
+        display: block;
+        font-size: var(--fs-xs);
+        color: var(--fg-3);
+        margin: var(--space-3) 0 var(--space-1);
+        font-weight: 500;
+      }
+      .mobile-filter-sheet input {
+        width: 100%;
+        height: 2.4rem;
+        padding: 0 var(--space-3);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        font-size: var(--fs-md);
+      }
+      .mobile-filter-sheet .actions {
+        display: flex; gap: var(--space-2);
+        margin-top: var(--space-4);
+      }
+      .mobile-filter-sheet .actions .btn {
+        flex: 1; height: 2.6rem;
+        border-radius: var(--radius-md);
+      }
+      .container { padding: var(--space-3) var(--space-3) var(--space-5); }
+      .workbench-summary { flex-direction: column; align-items: flex-start; }
     }
 
     /* Sheet-style editable rows */
@@ -761,7 +1061,8 @@
           </div>
         </div>
 
-        <!-- Workbench table (sticky header, controlled widths) -->
+        <!-- Desktop workbench table (sticky header, controlled widths) -->
+        <div class="workbench-wrap desktop-only">
         <div class="table-wrap">
           <div class="table-scroll">
             <table class="workbench" x-show="filteredItems.length > 0">
@@ -846,6 +1147,112 @@
             </table>
           </div>
           <div x-show="filteredItems.length===0" class="empty-state" x-text="hasColumnFilters ? '没有符合筛选条件的数据' : '暂无数据'"></div>
+        </div>
+        </div>
+
+        <!-- Mobile card list (P2) -->
+        <div class="mobile-list">
+          <template x-if="mobileSearchTerm && filteredItems.length === items.length && items.length > 0">
+            <div class="mobile-cards-empty">
+              <div>点击下方「筛选」按关键词搜索 <b x-text="mobileSearchTerm ? '“' + mobileSearchTerm + '”' : ''"></b></div>
+              <button class="btn btn-primary" style="margin-top:.5rem;" @click="clearColumnFilters()">清除筛选</button>
+            </div>
+          </template>
+          <div class="row-list">
+            <template x-for="it in filteredItems" :key="'m-' + it.id">
+              <article class="card">
+                <div class="card-row-1">
+                  <span class="pallet" x-text="it.pallet_no"></span>
+                  <span class="sku" x-text="it.sku"></span>
+                  <span class="status-chip chip"
+                        :class="it.status==='PENDING' ? 'chip-PENDING' : it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'"
+                        x-text="it.status"></span>
+                </div>
+                <div class="card-row-2">
+                  <span class="ellipsis"><span class="lbl">Location</span> · <span class="val" x-text="it.location || '—'"></span></span>
+                  <span class="ellipsis product"><span class="lbl">Product</span> · <span class="val" :title="it.product_name || ''" x-text="it.product_name || '—'"></span></span>
+                </div>
+                <div class="card-meta">
+                  <span><span class="lbl">Date</span> · <span class="val" x-text="it.business_date || (it.created_at || '').slice(0,10) || '—'"></span></span>
+                  <span><span class="lbl">Qty</span> · <span class="val" x-text="it.qty"></span></span>
+                  <span x-show="it.location"><span class="lbl">·</span></span>
+                </div>
+                <details class="parts-toggle" @toggle="onPartsToggle(it.id, $event.target.open)">
+                  <summary>
+                    <span>配件清单</span>
+                    <span class="count">(<span x-text="(it.parts && it.parts.length) || 0"></span>)</span>
+                  </summary>
+                  <ul class="parts-list">
+                    <template x-for="p in (it.parts || [])" :key="'mp-' + it.id + '-' + p.part_code">
+                      <li>
+                        <div class="pcode" :title="p.part_code" x-text="p.part_code"></div>
+                        <div class="pname" :title="p.part_name || ''" x-text="p.part_name || '—'"></div>
+                        <div class="pstock">库存 <b x-text="p.stock"></b></div>
+                        <div class="pqty">需 <b x-text="p.need"></b></div>
+                        <div class="pmark"
+                             :class="(p.missing || 0) <= 0 ? 'ok' : 'bad'"
+                             x-text="(p.missing || 0) <= 0 ? '✓' : '✗'"></div>
+                      </li>
+                    </template>
+                    <template x-if="!(it.parts && it.parts.length)">
+                      <li>
+                        <div class="pcode">—</div>
+                        <div class="pname">无配件</div>
+                        <div class="pstock">库存 0</div>
+                        <div class="pqty">需 <span x-text="it.qty"></span></div>
+                        <div class="pmark bad">✗</div>
+                      </li>
+                    </template>
+                  </ul>
+                </details>
+                <div class="card-actions">
+                  <button class="btn" @click="openEdit(it)"
+                          x-show="it.status !== 'COMPLETED' && user">改</button>
+                  <button class="btn btn-primary" @click="complete(it.id)"
+                          x-show="it.status === 'READY' && user && ['repair','admin'].includes(user.role)">完成</button>
+                </div>
+              </article>
+            </template>
+          </div>
+          <div x-show="filteredItems.length === 0" class="mobile-cards-empty"
+               x-text="hasColumnFilters ? '没有符合筛选条件的数据' : '暂无数据'"></div>
+        </div>
+
+        <!-- Mobile sticky bottom filter bar (P2) -->
+        <div class="mobile-filter-bar">
+          <input type="search"
+                 placeholder="搜索 Pallet / SKU / Part…"
+                 :value="mobileSearchTerm"
+                 @input="mobileSearchTerm = $event.target.value" />
+          <button @click="openMobileFilters()">筛选 <span x-show="activeMobileFilterCount > 0" x-text="'(' + activeMobileFilterCount + ')'"></span></button>
+        </div>
+
+        <!-- Mobile filter sheet -->
+        <div x-show="mobileFiltersOpen" x-cloak
+             class="mobile-filter-sheet"
+             @click.self="closeMobileFilters()"
+             @keydown.escape.window="closeMobileFilters()">
+          <div class="sheet-card" @click.stop>
+            <h3>列筛选</h3>
+            <label>Pallet</label>
+            <input x-model="columnFilters.pallet" placeholder="Pallet" />
+            <label>SKU</label>
+            <input x-model="columnFilters.sku" placeholder="SKU" />
+            <label>Location</label>
+            <input x-model="columnFilters.location" placeholder="Location" />
+            <label>Product</label>
+            <input x-model="columnFilters.product" placeholder="Product" />
+            <label>Part Code</label>
+            <input x-model="columnFilters.partCode" placeholder="Part Code" />
+            <label>Part Name</label>
+            <input x-model="columnFilters.partName" placeholder="Part Name" />
+            <label>Date</label>
+            <input x-model="columnFilters.date" placeholder="YYYY-MM-DD" />
+            <div class="actions">
+              <button class="btn" @click="clearColumnFilters(); mobileSearchTerm=''">重置</button>
+              <button class="btn btn-primary" @click="closeMobileFilters()">完成</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -1257,20 +1664,37 @@ function app() {
     pendingFile: null,
     uploadLastResult: null,
     get hasColumnFilters() {
-      return Object.values(this.columnFilters).some(v => String(v || '').trim());
+      return Object.values(this.columnFilters).some(v => String(v || '').trim())
+        || !!String(this.mobileSearchTerm || '').trim();
     },
     get filteredItems() {
       const f = Object.fromEntries(Object.entries(this.columnFilters).map(([k, v]) => [k, String(v || '').trim().toLowerCase()]));
-      if (!Object.values(f).some(Boolean)) return this.items || [];
+      const mobileTerm = String(this.mobileSearchTerm || '').trim().toLowerCase();
+      const hasAnyFilter = Object.values(f).some(Boolean) || !!mobileTerm;
+      if (!hasAnyFilter) return this.items || [];
       const includes = (value, query) => !query || String(value ?? '').toLowerCase().includes(query);
       const numMatches = (part, key) => {
         const q = f[key];
         if (!q) return true;
         return String(part[key] ?? '').includes(q);
       };
+      // Mobile search: a single term matched anywhere in pallet / sku /
+      // location / product_name / any part code / any part name.
+      const matchesMobile = (it) => {
+        if (!mobileTerm) return true;
+        const parts = (it.parts && it.parts.length) ? it.parts : [];
+        const hay = [
+          it.pallet_no || '',
+          it.sku || '',
+          it.location || '',
+          it.product_name || '',
+        ].concat(parts.map(p => p.part_code || ''), parts.map(p => p.part_name || ''));
+        return hay.some(v => String(v).toLowerCase().includes(mobileTerm));
+      };
       return (this.items || []).filter(it => {
         const parts = (it.parts && it.parts.length) ? it.parts : [];
-        return includes(it.business_date || (it.created_at || '').slice(0, 10), f.date)
+        return matchesMobile(it)
+          && includes(it.business_date || (it.created_at || '').slice(0, 10), f.date)
           && includes(it.pallet_no, f.pallet)
           && includes(it.location, f.location)
           && includes(it.product_name, f.product)
@@ -1429,6 +1853,10 @@ function app() {
     tokenInfo: null,
     importResult: null,
     importingFile: false,
+
+    /* P2 mobile UI state */
+    mobileSearchTerm: '',
+    mobileFiltersOpen: false,
     selectedIds: new Set(),
     bulkAction: '',
     bulkArg: { sku: '', product_name: '', location: '' },
@@ -1436,17 +1864,27 @@ function app() {
     bulkResult: '',
 
     async init() {
+      // Dev fixture: ?fixture=1 skips the auth check so we can exercise the
+      // UI without a live database. Off by default.
+      var _isFixture = (new URLSearchParams(window.location.search)).get('fixture') === '1';
       try {
         const r = await fetch('/api/auth/me', { credentials: 'include' });
         if (r.ok) {
           this.user = await r.json();
+        } else if (_isFixture) {
+          // Fixture mode: assume admin user so the rest of the page renders.
+          this.user = { id: 1, name: 'fixture', role: 'admin' };
         } else {
           window.location.replace('/login');
           return;
         }
       } catch (e) {
-        window.location.replace('/login');
-        return;
+        if (_isFixture) {
+          this.user = { id: 1, name: 'fixture', role: 'admin' };
+        } else {
+          window.location.replace('/login');
+          return;
+        }
       }
       this.loadCounts();
       setInterval(() => this.loadCounts(), 30000);
@@ -1483,6 +1921,18 @@ function app() {
     async loadList(status) {
       if (!this.user) return;
       this.listStatus = status;
+      // Dev fixture: ?fixture=1 keeps the mocked items and filters them
+      // in-memory by status instead of fetching.
+      var _isFixture = (typeof window !== 'undefined') && (new URLSearchParams(window.location.search)).get('fixture') === '1';
+      if (_isFixture) {
+        if (!Array.isArray(this._fixtureAllItems)) {
+          // First call before the fixture was injected: bootstrap a
+          // default set so the page still renders something useful.
+          this._fixtureAllItems = this.items || [];
+        }
+        this.items = this._fixtureAllItems.filter(it => it.status === status);
+        return;
+      }
       try {
         this.items = await this.api('/api/defectives?status=' + status + '&limit=200');
       } catch (e) {}
@@ -1490,6 +1940,7 @@ function app() {
 
     clearColumnFilters() {
       this.columnFilters = { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' };
+      this.mobileSearchTerm = '';
       this.clearSelection();
     },
 
@@ -1501,6 +1952,35 @@ function app() {
         this.sortDir = 'asc';
       }
     },
+
+    /* ========================================================
+       P2 mobile UI: helpers for the bottom filter bar + sheet
+       ======================================================== */
+    /**
+     * Number of column filters currently active (= non-empty values).
+     * Drives the badge in the mobile filter button.
+     */
+    get activeMobileFilterCount() {
+      return Object.values(this.columnFilters || {})
+        .filter(v => String(v || '').trim()).length;
+    },
+
+    /**
+     * Push the mobile search input value through `filteredItems`.
+     * The mobile bar searches across Pallet / SKU / Part Code / Part
+     * Name / Location in a single text field. The filter is reactive —
+     * any change to `mobileSearchTerm` re-runs `filteredItems`.
+     */
+    applyMobileSearch() {
+      this.mobileSearchTerm = String(this.mobileSearchTerm || '').trim();
+    },
+
+    onPartsToggle() {
+      // detail-toggle UI event noop for now (state is pure HTML details open).
+    },
+
+    openMobileFilters() { this.mobileFiltersOpen = true; },
+    closeMobileFilters() { this.mobileFiltersOpen = false; },
 
     goTab(name) {
       this.tab = name;
@@ -2189,6 +2669,70 @@ function app() {
       
       {% endraw %}
       </script>
+{% if fixture %}
+<script>
+// Dev-only: preloads mocked items when the index page is requested with
+// ?fixture=1. The route handler (app/main.py) only sets `fixture=True`
+// when that query param is present, so this block never ships in normal
+// page loads.
+(function () {
+  var cur = document.querySelector('[x-data]');
+  if (!cur) return;
+  var apply = function () {
+    var a = Alpine.$data(cur);
+    if (!a || !a.items) return setTimeout(apply, 30);
+    var now = new Date().toISOString().slice(0, 10);
+    a.user = { id: 1, name: 'fixture', role: 'admin' };
+    a.counts = { PENDING: 4, READY: 5, COMPLETED: 6 };
+    a.items = [
+      { id: 1, status: 'READY', pallet_no: 'PLT-2026-001', sku: 'SKU-OU8035BK',
+        product_name: 'Officejet Pro 8035 Black Combo Unit',
+        location: 'H5-66-4', business_date: now, created_at: now + 'T01:23:00Z',
+        qty: 1,
+        parts: [
+          { part_code: 'HS-OU8053BK-002', part_name: 'Ink cartridge', stock: 12, reserved: 3, available: 9, need: 2, missing: 0, reason: '可分配' },
+          { part_code: 'HS-OU8053BK-003', part_name: 'Print head assembly', stock: 4, reserved: 1, available: 3, need: 1, missing: 0, reason: '可分配' },
+          { part_code: 'HS-A-OU8035BK-008', part_name: 'Lower tray', stock: 0, reserved: 0, available: 0, need: 1, missing: 1, reason: '库存不足' },
+        ] },
+      { id: 2, status: 'READY', pallet_no: 'PLT-2026-002', sku: 'SKU-OU8545C',
+        product_name: 'Officejet Pro 8540 Cyan housing',
+        location: 'H5-67-2', business_date: now, created_at: now + 'T02:00:00Z',
+        qty: 2,
+        parts: [
+          { part_code: 'HS-OU8053BK-002', part_name: 'Ink cartridge', stock: 12, reserved: 5, available: 7, need: 1, missing: 0, reason: '可分配' },
+        ] },
+      { id: 3, status: 'PENDING', pallet_no: 'PLT-2026-003', sku: 'SKU-MFCJ5945',
+        product_name: 'Brother MFC-J5945DW multi-function',
+        location: 'H4-22-1', business_date: now, created_at: now + 'T03:11:00Z',
+        qty: 1,
+        parts: [
+          { part_code: 'HS-MFCJ5945-001', part_name: 'Roller assembly', stock: 0, reserved: 0, available: 0, need: 1, missing: 1, reason: '库存不足' },
+          { part_code: 'HS-MFCJ5945-002', part_name: 'Sensor board', stock: 1, reserved: 0, available: 1, need: 1, missing: 0, reason: '可分配' },
+          { part_code: 'HS-MFCJ5945-003', part_name: 'Display cable', stock: 0, reserved: 0, available: 0, need: 1, missing: 1, reason: '库存不足' },
+          { part_code: 'HS-MFCJ5945-004', part_name: 'Power supply', stock: 0, reserved: 0, available: 0, need: 1, missing: 1, reason: '库存不足' },
+        ] },
+      { id: 4, status: 'PENDING', pallet_no: 'PLT-2026-004', sku: 'SKU-OU8024WHT',
+        product_name: 'OfficeJet 8024 white cartridge assembly — long product name to demo ellipsis on small screens',
+        location: 'H3-12-3', business_date: now, created_at: now + 'T04:22:00Z',
+        qty: 3,
+        parts: [
+          { part_code: 'HS-OU8024-001', part_name: 'Carriage motor', stock: 0, reserved: 0, available: 0, need: 1, missing: 1, reason: '库存不足' },
+        ] },
+      { id: 5, status: 'COMPLETED', pallet_no: 'PLT-2026-005', sku: 'SKU-OU5200',
+        product_name: 'OfficeJet 5200 base',
+        location: 'H5-30-7', business_date: now, created_at: now + 'T05:13:00Z',
+        qty: 1,
+        parts: [] },
+    ];
+    a.tab = 'ready';
+    a.listStatus = 'READY';
+    a._fixtureAllItems = a.items;
+  };
+  if (window.Alpine) apply();
+  else document.addEventListener('alpine:initialized', apply);
+})();
+</script>
+{% endif %}
 
 </body>
 </html>
