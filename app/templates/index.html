@@ -120,6 +120,11 @@
     .def-table .row-READY { background: rgba(220, 252, 231, .18); }
     .def-table .row-COMPLETED td { color: var(--fg-3); }
     .def-table tr:hover { background: rgba(99, 102, 241, .06); }
+    .def-table .column-filters th { padding: .3rem .35rem; background: #fff; }
+    .def-table .column-filters input {
+      width: 100%; min-width: 5.5rem; box-sizing: border-box;
+      padding: .3rem .4rem; font-size: .72rem; border: 1px solid var(--line); border-radius: .3rem;
+    }
     th, td { padding: .5rem; text-align: left; }
     th { font-size: .75rem; color: var(--fg-3); border-bottom: 1px solid var(--line); }
     tbody tr { border-bottom: 1px solid var(--line); }
@@ -433,13 +438,8 @@
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='ready' ? 'background:#dcfce7;color:#166534;' : ''">🟢 <a href="#" @click.prevent="tab='ready';loadList('READY')" style="text-decoration:none;color:inherit;">READY</a></span>
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='pending' ? 'background:#fee2e2;color:#991b1b;' : ''">🔴 <a href="#" @click.prevent="tab='pending';loadList('PENDING')" style="text-decoration:none;color:inherit;">PENDING</a></span>
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='history' ? 'background:#f1f5f9;color:#475569;' : ''">📜 <a href="#" @click.prevent="tab='history';loadList('COMPLETED')" style="text-decoration:none;color:inherit;">COMPLETED</a></span>
-          <div x-show="['ready','pending'].includes(tab)" style="display:flex; gap:.35rem; align-items:center; flex:1; max-width:28rem;">
-            <input x-model="listSearch" @input.debounce.300ms="searchList()" @keydown.escape="listSearch='';searchList()"
-                   type="search" placeholder="搜索 Pallet / SKU / 商品 / 仓位 / 配件编码"
-                   style="width:100%; padding:.4rem .65rem; border:1px solid var(--line); border-radius:.35rem;" />
-            <button x-show="listSearch" class="btn" @click="listSearch='';searchList()">清除</button>
-          </div>
           <span style="margin-left:auto;">
+            <button x-show="['ready','pending'].includes(tab) && hasColumnFilters" class="btn" @click="clearColumnFilters()">清除筛选</button>
             <button class="btn" @click="toggleSelectAll()">全选 / 反选</button>
           </span>
         </div>
@@ -459,6 +459,17 @@
               <th style="text-align:right;">On Hand</th>
               <th style="text-align:right;">Short</th>
               <th></th>
+            </tr>
+            <tr x-show="['ready','pending'].includes(tab)" class="column-filters">
+              <th></th>
+              <th><input x-model="columnFilters.business_date" @input.debounce.300ms="searchList()" placeholder="YYYY-MM-DD" /></th>
+              <th><input x-model="columnFilters.pallet" @input.debounce.300ms="searchList()" placeholder="Pallet" /></th>
+              <th><input x-model="columnFilters.location" @input.debounce.300ms="searchList()" placeholder="Location" /></th>
+              <th><input x-model="columnFilters.product" @input.debounce.300ms="searchList()" placeholder="Product" /></th>
+              <th><input x-model="columnFilters.sku" @input.debounce.300ms="searchList()" placeholder="SKU" /></th>
+              <th><input x-model="columnFilters.part_code" @input.debounce.300ms="searchList()" placeholder="Part Code" /></th>
+              <th><input x-model="columnFilters.part_name" @input.debounce.300ms="searchList()" placeholder="Part Name" /></th>
+              <th></th><th></th><th></th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -767,8 +778,9 @@ function app() {
     tab: 'create',
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
-    listSearch: '',
     listStatus: '',
+    columnFilters: { business_date: '', pallet: '', location: '', product: '', sku: '', part_code: '', part_name: '' },
+    get hasColumnFilters() { return Object.values(this.columnFilters).some(v => String(v || '').trim()); },
     get expandedRows() {
       // Flatten items × parts into one row per part for the table view.
       // ticket-info columns are shown only on the first row (pi === 0).
@@ -943,11 +955,13 @@ function app() {
     async loadList(status) {
       if (!this.user) return;
       this.listStatus = status;
-      if (status === 'COMPLETED') this.listSearch = '';
       try {
-        const q = this.listSearch.trim();
-        const endpoint = q && status !== 'COMPLETED'
-          ? '/api/defectives/filter?status=' + status + '&q=' + encodeURIComponent(q) + '&limit=500'
+        const params = new URLSearchParams({ status, limit: '500' });
+        for (const [key, value] of Object.entries(this.columnFilters)) {
+          if (String(value || '').trim()) params.set(key, String(value).trim());
+        }
+        const endpoint = this.hasColumnFilters && status !== 'COMPLETED'
+          ? '/api/defectives/filter?' + params.toString()
           : '/api/defectives?status=' + status + '&limit=200';
         this.items = await this.api(endpoint);
       } catch (e) {}
@@ -957,6 +971,11 @@ function app() {
       if (!['READY', 'PENDING'].includes(this.listStatus)) return;
       this.clearSelection();
       await this.loadList(this.listStatus);
+    },
+
+    async clearColumnFilters() {
+      this.columnFilters = { business_date: '', pallet: '', location: '', product: '', sku: '', part_code: '', part_name: '' };
+      await this.searchList();
     },
 
     async loadSummary() {
