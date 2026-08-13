@@ -231,6 +231,8 @@ async def upload_defectives(
                     "failed": 1,
                     "parse_failures_count": 0,
                     "header_detected": False,
+                    "ready_count": 0,
+                    "pending_count": 0,
                 },
                 "successes": [],
                 "failures": [{"pallet": "—", "error": f"{type(e).__name__}: {e}"}],
@@ -448,6 +450,8 @@ async def _upload_defectives_impl(
             except Exception as e:
                 failures.append({"pallet": pallet, "error": str(e) or "failed"})
 
+    ready_count = sum(1 for s in successes if s.get("status") == "READY")
+    pending_count = sum(1 for s in successes if s.get("status") == "PENDING")
     return {
         "summary": {
             "submitted_tickets": len(tickets),
@@ -456,6 +460,8 @@ async def _upload_defectives_impl(
             "failed": len(failures),
             "parse_failures_count": len(parse_failures),
             "header_detected": has_header,
+            "ready_count": ready_count,
+            "pending_count": pending_count,
         },
         "successes": successes,
         "failures": failures,

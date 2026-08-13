@@ -122,7 +122,7 @@ async def upload_csv(
 @router.get("/summary")
 async def summary(user: dict = Depends(require_role("admin", "repair"))):
     async with pool().acquire() as conn:
-        row = await conn.fetchrow(
+        inv_row = await conn.fetchrow(
             """
             SELECT
                 COUNT(*)::int AS sku_count,
@@ -131,7 +131,31 @@ async def summary(user: dict = Depends(require_role("admin", "repair"))):
             FROM inventory_snapshot
             """
         )
-    return dict(row) if row else {"sku_count": 0, "total_units": 0, "last_updated": None}
+        # Per-pallet status counts so the page can show READY/PENDING split.
+        counts_row = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) FILTER (WHERE status='PENDING')::int AS pending_items,
+                COUNT(*) FILTER (WHERE status='PENDING')::int +
+                COUNT(*) FILTER (WHERE status='READY')::int AS open_items
+            FROM defective_items
+            """
+        )
+        # Distinct pallet count still in PENDING.
+        pallet_row = await conn.fetchrow(
+            """
+            SELECT COUNT(DISTINCT pallet_no)::int AS pending_pallets
+            FROM defective_items WHERE status='PENDING'
+            """
+        )
+    return {
+        "sku_count": inv_row["sku_count"] if inv_row else 0,
+        "total_units": inv_row["total_units"] if inv_row else 0,
+        "last_updated": inv_row["last_updated"].isoformat() if inv_row and inv_row["last_updated"] else None,
+        "pending_items": counts_row["pending_items"] if counts_row else 0,
+        "open_items": counts_row["open_items"] if counts_row else 0,
+        "pending_pallets": pallet_row["pending_pallets"] if pallet_row else 0,
+    }
 
 
 @router.get("/preview/{part_code}")

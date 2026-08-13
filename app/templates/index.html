@@ -19,6 +19,7 @@
       --line: #e2e8f0;
       --brand: #2563eb;
       --brand-fg: #ffffff;
+      --brand-soft: #eef2ff;
       --red: #dc2626;
       --green: #16a34a;
       --gray: #6b7280;
@@ -26,6 +27,8 @@
       --amber-bg: #fef3c7;
       --warn-bg: #fef2f2;
       --ok-bg: #dcfce7;
+      --row-pending: rgba(254, 226, 226, .25);
+      --row-ready: rgba(220, 252, 231, .18);
     }
     *,*::before,*::after { box-sizing: border-box; }
     html,body { margin: 0; padding: 0; }
@@ -252,6 +255,247 @@
     .cell-required { background: #fef2f2 !important; border-color: #fecaca; }
     .header-active { background: #eef2ff !important; border-left: 3px solid var(--brand); }
     .split-target { color: var(--brand); font-family: ui-monospace, monospace; }
+
+    /* Compact top navigation */
+    .topnav {
+      display: flex; flex-wrap: wrap; gap: .25rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: .65rem;
+      padding: .25rem;
+      margin-bottom: 1rem;
+    }
+    .nav-btn {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .42rem .75rem;
+      border-radius: .4rem;
+      border: 0; background: transparent; cursor: pointer;
+      font-family: inherit; font-size: .85rem; font-weight: 500;
+      color: var(--fg-2);
+      transition: background .12s ease, color .12s ease;
+    }
+    .nav-btn:hover { background: #f1f5f9; color: var(--fg); }
+    .nav-btn.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+    .nav-btn .nav-icon {
+      width: 1rem; height: 1rem;
+      flex-shrink: 0;
+      stroke: currentColor; fill: none; stroke-width: 1.75;
+      stroke-linecap: round; stroke-linejoin: round;
+    }
+    .nav-btn .badge-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 1.4rem; height: 1.25rem; padding: 0 .35rem;
+      border-radius: 999px;
+      font-size: .68rem; font-weight: 700;
+      background: var(--line);
+      color: var(--fg-2);
+    }
+    .nav-btn.active .badge-num { background: var(--brand); color: #fff; }
+    .nav-btn.badge-pending .badge-num { background: var(--red); color: #fff; }
+    .nav-btn.badge-ready .badge-num { background: var(--green); color: #fff; }
+    .nav-btn.right { margin-left: auto; }
+
+    /* Workbench table */
+    .table-wrap {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: .65rem;
+      overflow: hidden;
+    }
+    .table-scroll { overflow-x: auto; max-height: 70vh; }
+    table.workbench { width: 100%; font-size: .85rem; border-collapse: separate; border-spacing: 0; }
+    .workbench thead th {
+      position: sticky; top: 0; z-index: 2;
+      background: #f8fafc;
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .04em;
+      color: var(--fg-3); font-weight: 700;
+      border-bottom: 1px solid var(--line);
+      padding: .45rem .6rem;
+      white-space: nowrap;
+      text-align: left;
+    }
+    .workbench tbody td {
+      padding: .45rem .6rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+      text-align: left;
+      white-space: nowrap;
+    }
+    .workbench tbody tr:last-child td { border-bottom: 0; }
+    .workbench tbody tr:hover { background: rgba(99, 102, 241, .04); }
+    .workbench .col-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; color: var(--fg-2); }
+    .workbench .col-num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; color: var(--fg-2); }
+    .workbench .col-num-zero { color: var(--fg-3); }
+    .workbench .col-num-pos { color: var(--green); }
+    .workbench .col-num-neg { color: var(--red); font-weight: 600; }
+    .workbench .col-num-reserved { color: var(--amber); }
+    .workbench .col-part-name { color: var(--fg-3); font-size: .8rem; max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
+    .workbench .col-qty { width: 3.5rem; }
+    .workbench .col-stock { width: 4rem; }
+    .workbench .col-short { width: 4rem; }
+    .workbench .col-status { width: 5.5rem; }
+    .workbench .col-actions { width: 6rem; text-align: right; }
+    .workbench .col-checkbox { width: 2.25rem; }
+    .workbench .col-date { width: 6.5rem; }
+    .workbench .col-pallet { width: 6rem; }
+    .workbench .col-loc { width: 5rem; }
+    .workbench .col-product { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
+    .workbench .col-sku { width: 7rem; }
+    .workbench .col-part-code { width: 11rem; }
+    .workbench tr.row-PENDING td { background: var(--row-pending); }
+    .workbench tr.row-READY td { background: var(--row-ready); }
+    .workbench tr.row-COMPLETED td { color: var(--fg-3); }
+    .workbench tr.selected td { background: var(--brand-soft) !important; }
+    .workbench .column-filters th {
+      padding: .25rem .4rem !important;
+      background: #fff !important;
+      position: sticky; top: 30px; z-index: 1;
+    }
+    .workbench .column-filters input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: .28rem .4rem;
+      border: 1px solid var(--line);
+      border-radius: .3rem;
+      font-size: .72rem;
+      font-weight: 400;
+      min-width: 4rem;
+    }
+    .workbench .sort-btn {
+      display: inline-flex; align-items: center; gap: .15rem;
+      cursor: pointer; user-select: none;
+      background: transparent; border: 0; padding: 0; font: inherit; color: inherit;
+    }
+    .workbench .sort-arrow { font-size: .65rem; opacity: .55; }
+
+    /* Reason badge */
+    .reason-tag {
+      display: inline-block;
+      font-size: .68rem;
+      padding: .12rem .5rem;
+      border-radius: .25rem;
+      background: #fef2f2;
+      color: #991b1b;
+      font-weight: 500;
+      letter-spacing: .02em;
+      white-space: nowrap;
+    }
+    .reason-tag.reason-ok { background: #dcfce7; color: #166534; }
+    .reason-tag.reason-reserved { background: #fef3c7; color: #92400e; }
+    .reason-tag.reason-empty { background: transparent; color: transparent; padding: 0; min-width: 1rem; }
+
+    /* Inventory stats cards */
+    .inv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: .65rem; margin-bottom: 1rem; }
+    .inv-stats .stat { background: var(--panel); border: 1px solid var(--line); border-radius: .65rem; padding: .85rem 1rem; }
+    .inv-stats .stat .lbl { font-size: .72rem; color: var(--fg-3); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+    .inv-stats .stat .num { font-size: 1.55rem; font-weight: 700; line-height: 1.2; margin-top: .1rem; }
+    .inv-stats .stat.alt-pending .num { color: var(--red); }
+    .inv-stats .stat.alt-pending { border-color: #fecaca; }
+    .inv-stats .stat.alt-open .num { color: var(--brand); }
+    .inv-stats .stat.alt-open { border-color: #c7d2fe; background: var(--brand-soft); }
+
+    .danger-panel {
+      border: 1px solid #fecaca;
+      background: #fff7f7;
+      border-radius: .85rem;
+      padding: 1.1rem 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .danger-panel h3 { margin: 0 0 .35rem; font-size: 1rem; color: var(--red); display: flex; align-items: center; gap: .4rem; }
+    .danger-panel p { margin: 0 0 .85rem; font-size: .85rem; color: #7f1d1d; }
+
+    .inv-result {
+      margin-top: 1rem;
+      padding: .85rem 1rem;
+      border: 1px solid var(--line);
+      border-radius: .65rem;
+      background: #fff;
+      font-size: .85rem;
+    }
+    .inv-result .inv-result-title { font-weight: 600; margin-bottom: .35rem; display: flex; align-items: center; justify-content: space-between; }
+    .inv-result.ok { background: #f0fdf4; border-color: #bbf7d0; }
+    .inv-result.warn { background: #fefce8; border-color: #fde68a; }
+    .inv-result.bad { background: #fef2f2; border-color: #fecaca; }
+
+    /* Import: drag/drop + preview + result */
+    .drop-zone {
+      border: 2px dashed var(--line);
+      border-radius: 1rem;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      background: #f8fafc;
+      cursor: pointer;
+      transition: border-color .12s ease, background .12s ease;
+    }
+    .drop-zone:hover { border-color: var(--brand); background: #f0f7ff; }
+    .drop-zone.dragging { border-color: var(--brand); background: var(--brand-soft); }
+    .drop-zone-title { font-size: 1rem; font-weight: 600; color: var(--fg); margin: 0 0 .25rem; }
+    .drop-zone-sub { font-size: .85rem; color: var(--fg-3); margin: 0; }
+    .drop-zone input[type="file"] { display: none; }
+
+    .file-preview {
+      margin-top: 1rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: .85rem;
+      padding: 1rem 1.15rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: .75rem;
+      align-items: start;
+    }
+    .file-preview h4 { margin: 0 0 .35rem; font-size: .95rem; }
+    .file-preview dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .25rem .85rem; font-size: .85rem; }
+    .file-preview dt { color: var(--fg-3); font-weight: 500; }
+    .file-preview dd { margin: 0; color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .file-preview .preview-actions { display: flex; flex-direction: column; gap: .35rem; align-items: stretch; min-width: 8.5rem; }
+
+    .import-result {
+      margin-top: 1rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: .85rem;
+      padding: 1rem 1.15rem;
+    }
+    .import-result h4 { margin: 0 0 .65rem; font-size: .95rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+    .ir-status-line { display: flex; gap: .65rem; flex-wrap: wrap; margin-bottom: .65rem; align-items:center; }
+    .ir-status-line .ir-tag {
+      padding: .25rem .65rem; border-radius: .35rem; font-size: .8rem; font-weight: 600;
+    }
+    .ir-tag.ready { background: #dcfce7; color: #166534; }
+    .ir-tag.pending { background: #fee2e2; color: #991b1b; }
+    .ir-tag.failed { background: #fef2f2; color: #991b1b; }
+    .ir-tag.parse { background: #fef3c7; color: #92400e; }
+    .ir-success-list, .ir-failure-list { margin: 0; padding-left: 1.15rem; }
+    .ir-success-list li, .ir-failure-list li { font-size: .82rem; }
+    .ir-success-list a, .ir-failure-list a { text-decoration: none; color: inherit; }
+    .ir-success-list a:hover { text-decoration: underline; color: var(--brand); }
+    .ir-failure-list .err-line { color: var(--fg-3); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+    /* Hero card (entry landing) */
+    .hero-card {
+      background: linear-gradient(135deg, var(--brand) 0%, #1d4ed8 100%);
+      color: #fff;
+      border-radius: 1rem;
+      padding: 1.5rem 1.6rem;
+      margin-bottom: 1rem;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 1rem;
+      align-items: center;
+    }
+    .hero-card h2 { margin: 0 0 .35rem; font-size: 1.25rem; font-weight: 700; }
+    .hero-card p { margin: 0; font-size: .9rem; opacity: .9; }
+    .hero-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .hero-actions .btn-primary { background: #fff; color: var(--brand); border-color: #fff; }
+    .hero-actions .btn-primary:hover { background: #f1f5f9; }
+    .hero-actions .btn { background: rgba(255,255,255,.15); color: #fff; border-color: rgba(255,255,255,.25); }
+    .hero-actions .btn:hover { background: rgba(255,255,255,.25); }
+
+    .workbench-summary { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; margin-bottom: .55rem; }
+    .workbench-summary .label { font-size: 1.1rem; font-weight: 600; margin: 0; }
+    .workbench-summary .meta { font-size: .82rem; color: var(--fg-3); margin: .15rem 0 0; }
+    .workbench-summary .meta b { color: var(--fg); }
   </style>
 </head>
 <body>
@@ -273,23 +517,90 @@
 
     
 
-      <!-- Tabs -->
-      <div class="tabs">
-        <button @click="tab='create'" :class="tab==='create' && 'active'" class="tab-btn">📝 录入</button>
-        <button @click="tab='ready';loadList('READY')" :class="tab==='ready' && 'active'" class="tab-btn">🟢 READY</button>
-        <button @click="tab='pending';loadList('PENDING')" :class="tab==='pending' && 'active'" class="tab-btn">🔴 PENDING</button>
-        <button @click="tab='history';loadList('COMPLETED')" :class="tab==='history' && 'active'" class="tab-btn">📜 历史</button>
-        <button @click="tab='inventory';loadSummary()" :class="tab==='inventory' && 'active'" class="tab-btn right">📤 库存</button>
-        <button x-show="user && user.role==='admin'" @click="tab='users';loadUsers()" :class="tab==='users' && 'active'" class="tab-btn">⚙ 账号</button>
-        <button x-show="user && ['returns','admin'].includes(user.role)" @click="tab='import'" :class="tab==='import' && 'active'" class="tab-btn">📥 批量导入</button>
-      </div>
+      <!-- Top navigation: compact buttons with count badges -->
+      <nav class="topnav" role="tablist" aria-label="主导航">
+        <button @click="goTab('create')" :class="tab==='create' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          录入
+        </button>
+        <button @click="goTab('ready')" :class="tab==='ready' && 'active'" class="nav-btn badge-ready" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 13l4 4L19 7"/>
+          </svg>
+          READY
+          <span class="badge-num" x-text="counts.READY || 0"></span>
+        </button>
+        <button @click="goTab('pending')" :class="tab==='pending' && 'active'" class="nav-btn badge-pending" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M12 7v5l3 2"/>
+          </svg>
+          PENDING
+          <span class="badge-num" x-text="counts.PENDING || 0"></span>
+        </button>
+        <button @click="goTab('history')" :class="tab==='history' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 12a9 9 0 1 0 3-6.7"/>
+            <path d="M3 4v5h5"/>
+            <path d="M12 7v5l3 2"/>
+          </svg>
+          历史
+          <span class="badge-num" x-text="counts.COMPLETED || 0"></span>
+        </button>
+        <button @click="goTab('inventory');loadSummary()" :class="tab==='inventory' && 'active'" class="nav-btn right" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 7l9-4 9 4-9 4-9-4z"/>
+            <path d="M3 12l9 4 9-4"/>
+            <path d="M3 17l9 4 9-4"/>
+          </svg>
+          库存
+        </button>
+        <button x-show="user && user.role==='admin'" @click="goTab('users');loadUsers()" :class="tab==='users' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M4 21a8 8 0 0 1 16 0"/>
+          </svg>
+          账号
+        </button>
+        <button x-show="user && ['returns','admin'].includes(user.role)" @click="goTab('import')" :class="tab==='import' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v14"/>
+            <path d="M6 11l6 6 6-6"/>
+            <path d="M5 21h14"/>
+          </svg>
+          批量导入
+        </button>
+      </nav>
 
       <!-- CREATE TAB -->
-      <div x-show="tab==='create'" class="panel">
-        <div x-show="user && !['returns','admin'].includes(user.role)" class="alert alert-warn">
-          ⚠ 录入需要 returns / admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
+      <section x-show="tab==='create'" x-cloak>
+      <div x-show="user && !['returns','admin'].includes(user.role)" class="alert alert-warn">
+        ⚠ 录入需要 returns / admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
+      </div>
+      <div x-show="user && ['returns','admin'].includes(user.role)">
+        <!-- Hero summary card -->
+        <div class="hero-card" x-show="!showForm">
+          <div>
+            <h2>录入新退件单</h2>
+            <p>每张退件单记录一个托盘（pallet），至少 1 个配件。<br>
+              选中下方一项开始操作，或先看 READY / PENDING 列表。</p>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-primary" @click="showForm=true">开始录入</button>
+            <button class="btn" @click="goTab('import')">批量导入</button>
+            <button class="btn" @click="goTab('ready')">查看 READY</button>
+          </div>
         </div>
-        <form x-show="user && ['returns','admin'].includes(user.role)" @submit.prevent="submitDefective()">
+
+        <div x-show="showForm">
+          <div class="row" style="justify-content: space-between; margin-bottom: .75rem;">
+            <h2 style="margin: 0; font-size: 1.1rem;">录入退件单</h2>
+            <button class="btn" @click="showForm=false" style="padding:.2rem .6rem;">收起</button>
+          </div>
+
+          <form @submit.prevent="submitDefective()">
 
           <!-- Per-ticket: each header row gets its own parts rows.
                Click ▶ to expand and edit the parts for that pallet. -->
@@ -408,198 +719,351 @@
           </div>
           <div x-show="submitMsg" class="alert" :class="submitOk ? 'alert-ok' : 'alert-bad'" x-text="submitMsg"></div>
         </form>
+        </div>
       </div>
+      </section>
 
       <!-- LIST TABS (READY / PENDING / HISTORY) -->
-      <div x-show="['ready','pending','history'].includes(tab)" class="row-list">
-
+      <section x-show="['ready','pending','history'].includes(tab)" x-cloak>
         <!-- Bulk-action bar -->
-        <div x-show="selectedIds.size > 0" style="display:flex; flex-wrap:wrap; gap:.5rem; padding:.65rem .85rem; background:#eef2ff; border:1px solid #c7d2fe; border-radius:.5rem; align-items:center; margin-bottom:.5rem;">
+        <div x-show="selectedIds.size > 0" style="display:flex; flex-wrap:wrap; gap:.5rem; padding:.6rem .85rem; background:var(--brand-soft); border:1px solid #c7d2fe; border-radius:.55rem; align-items:center; margin-bottom:.5rem;">
           <span style="font-weight:600;">已选 <span x-text="selectedIds.size"></span> 项</span>
-          <select x-model="bulkAction" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;">
+          <select x-model="bulkAction" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;">
             <option value="">— 选动作 —</option>
-            <option value="recompute">🔄 重算状态（按当前库存）</option>
-            <option value="mark_complete">✅ 标记完成（仅 repair/admin）</option>
-            <option value="set_sku">🆎 改 SKU（仅 admin）</option>
-            <option value="set_product_name">📝 改 Product Name（仅 admin）</option>
-            <option value="set_location">📍 改 仓位（仅 admin）</option>
-            <option value="delete">🗑 删除（仅 admin）</option>
+            <option value="recompute">重算状态（按当前库存）</option>
+            <option value="mark_complete">标记完成（仅 repair/admin）</option>
+            <option value="set_sku">改 SKU（仅 admin）</option>
+            <option value="set_product_name">改 Product Name（仅 admin）</option>
+            <option value="set_location">改 仓位（仅 admin）</option>
+            <option value="delete">删除（仅 admin）</option>
           </select>
-          <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
-          <input x-show="bulkAction === 'set_product_name'" x-model="bulkArg.product_name" placeholder="新 product_name" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
-          <input x-show="bulkAction === 'set_location'" x-model="bulkArg.location" placeholder="新 仓位 / location" style="padding:.4rem .65rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <input x-show="bulkAction === 'set_product_name'" x-model="bulkArg.product_name" placeholder="新 product_name" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <input x-show="bulkAction === 'set_location'" x-model="bulkArg.location" placeholder="新 仓位 / location" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <button class="btn btn-primary" @click="runBulkAction()" :disabled="!bulkAction || bulkBusy" x-text="bulkBusy ? '执行中…' : '执行'"></button>
           <button class="btn" @click="clearSelection()">清除选择</button>
           <span x-show="bulkResult" style="font-size:.85rem; color:var(--fg-2);" x-text="bulkResult"></span>
         </div>
 
-        <!-- Filter row -->
-        <div style="display:flex; gap:.5rem; margin-bottom:.5rem; align-items:center;">
-          <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='ready' ? 'background:#dcfce7;color:#166534;' : ''">🟢 <a href="#" @click.prevent="tab='ready';loadList('READY')" style="text-decoration:none;color:inherit;">READY</a></span>
-          <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='pending' ? 'background:#fee2e2;color:#991b1b;' : ''">🔴 <a href="#" @click.prevent="tab='pending';loadList('PENDING')" style="text-decoration:none;color:inherit;">PENDING</a></span>
-          <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='history' ? 'background:#f1f5f9;color:#475569;' : ''">📜 <a href="#" @click.prevent="tab='history';loadList('COMPLETED')" style="text-decoration:none;color:inherit;">COMPLETED</a></span>
-          <span style="margin-left:auto;">
+        <!-- Workbench summary with ticket / part counts -->
+        <div class="workbench-summary">
+          <div>
+            <h2 class="label" x-text="tab==='ready' ? 'READY · 可维修' : (tab==='pending' ? 'PENDING · 等配件' : '历史 · 已维修')"></h2>
+            <p class="meta">
+              <b x-text="tally.tickets"></b> 票 ·
+              <b x-text="tally.parts"></b> 个配件
+              <span x-show="hasColumnFilters"> · 已筛选</span>
+            </p>
+          </div>
+          <div class="row gap-xs">
             <button x-show="['ready','pending'].includes(tab) && hasColumnFilters" class="btn" @click="clearColumnFilters()">清除筛选</button>
             <button class="btn" @click="toggleSelectAll()">全选 / 反选</button>
-          </span>
+          </div>
         </div>
 
-        <table class="def-table" x-show="filteredItems.length > 0">
-          <thead>
-            <tr>
-              <th style="width:2rem;"><input type="checkbox" :checked="filteredItems.length>0 && filteredItems.every(it=>selectedIds.has(it.id))" @change="toggleSelectAll()" /></th>
-              <th>Date</th>
-              <th>Pallet</th>
-              <th>Location</th>
-              <th>Product Name</th>
-              <th>Product SKU</th>
-              <th>Part Code</th>
-              <th>Part Name</th>
-              <th style="text-align:right;">Qty</th>
-              <th style="text-align:right;">On Hand</th>
-              <th style="text-align:right;">Short</th>
-              <th></th>
-            </tr>
-            <tr x-show="['ready','pending'].includes(tab)" class="column-filters">
-              <th></th>
-              <th><input x-model="columnFilters.date" placeholder="Date" /></th>
-              <th><input x-model="columnFilters.pallet" placeholder="Pallet" /></th>
-              <th><input x-model="columnFilters.location" placeholder="Location" /></th>
-              <th><input x-model="columnFilters.product" placeholder="Product" /></th>
-              <th><input x-model="columnFilters.sku" placeholder="SKU" /></th>
-              <th><input x-model="columnFilters.partCode" placeholder="Part Code" /></th>
-              <th><input x-model="columnFilters.partName" placeholder="Part Name" /></th>
-              <th><input x-model="columnFilters.qty" placeholder="Qty" /></th>
-              <th><input x-model="columnFilters.onHand" placeholder="Stock" /></th>
-              <th><input x-model="columnFilters.short" placeholder="Short" /></th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <template x-for="row in expandedRows" :key="row.key">
-              <tr :class="row.it.status==='PENDING' ? 'row-PENDING' : row.it.status==='READY' ? 'row-READY' : 'row-COMPLETED'" :style="selectedIds.has(row.it.id) ? 'background:#f0f7ff;' : ''">
-                <td><input type="checkbox" :checked="selectedIds.has(row.it.id)" @change="toggleSelected(row.it.id)" x-show="row.pi===0" /></td>
-                <td class="mono" x-text="row.pi===0 ? (row.it.business_date || (row.it.created_at||'').slice(0,10)) : ''"></td>
-                <td class="mono"><span x-show="row.pi===0" x-text="row.it.pallet_no"></span></td>
-                <td><span x-show="row.pi===0" class="mono" x-text="row.it.location || '—'"></span></td>
-                <td><span x-show="row.pi===0" x-text="row.it.product_name || '—'"></span></td>
-                <td><span x-show="row.pi===0" class="mono" x-text="row.it.sku"></span></td>
-                <td class="mono" x-text="row.p.part_code"></td>
-                <td x-text="row.p.part_name || ''" style="color:var(--fg-3); font-size:.875rem;"></td>
-                <td style="text-align:right;" class="mono" x-text="row.p.need"></td>
-                <td style="text-align:right;" class="mono" :style="(row.p.have||0) < (row.p.need||0) ? 'color:var(--green)' : 'color:var(--fg-3)'" x-text="row.p.have"></td>
-                <td style="text-align:right;" class="mono" :style="row.p.short>0 ? 'color:var(--red); font-weight:600;' : 'color:var(--fg-3)'" x-text="row.p.short"></td>
-                <td>
-                  <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
-                  <button x-show="row.pi===0 && row.it.status!=='COMPLETED' && user"
-                          @click.stop="openEdit(row.it)" class="btn" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">✏️ 改</button>
-                  <button x-show="row.pi===0 && row.it.status==='READY' && user && ['repair','admin'].includes(user.role)"
-                          @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.25rem; padding:.15rem .5rem; font-size:.75rem;">完成</button>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-        <div x-show="filteredItems.length===0" class="empty-state" x-text="hasColumnFilters ? '没有符合筛选条件的数据' : '暂无数据'"></div>
-      </div>
+        <!-- Workbench table (sticky header, controlled widths) -->
+        <div class="table-wrap">
+          <div class="table-scroll">
+            <table class="workbench" x-show="filteredItems.length > 0">
+              <thead>
+                <tr>
+                  <th class="col-checkbox"><input type="checkbox" :checked="filteredItems.length>0 && filteredItems.every(it=>selectedIds.has(it.id))" @change="toggleSelectAll()" /></th>
+                  <th class="col-date"><button class="sort-btn" @click="setSort('business_date')">Date <span class="sort-arrow" x-text="sortKey==='business_date' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-pallet"><button class="sort-btn" @click="setSort('pallet_no')">Pallet <span class="sort-arrow" x-text="sortKey==='pallet_no' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-loc">Location</th>
+                  <th class="col-product">Product</th>
+                  <th class="col-sku"><button class="sort-btn" @click="setSort('sku')">SKU <span class="sort-arrow" x-text="sortKey==='sku' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-part-code">Part Code</th>
+                  <th>Part Name</th>
+                  <th class="col-qty">Need</th>
+                  <th class="col-stock" title="当前库存">Stock</th>
+                  <th class="col-stock" title="被其它 READY 单占用">Reserved</th>
+                  <th class="col-stock" title="stock − reserved">Available</th>
+                  <th class="col-short">Missing</th>
+                  <th>Reason</th>
+                  <th class="col-status">Status</th>
+                  <th class="col-actions"></th>
+                </tr>
+                <tr x-show="['ready','pending'].includes(tab)" class="column-filters">
+                  <th></th>
+                  <th><input x-model="columnFilters.date" placeholder="Date" /></th>
+                  <th><input x-model="columnFilters.pallet" placeholder="Pallet" /></th>
+                  <th><input x-model="columnFilters.location" placeholder="Location" /></th>
+                  <th><input x-model="columnFilters.product" placeholder="Product" /></th>
+                  <th><input x-model="columnFilters.sku" placeholder="SKU" /></th>
+                  <th><input x-model="columnFilters.partCode" placeholder="Part Code" /></th>
+                  <th><input x-model="columnFilters.partName" placeholder="Part Name" /></th>
+                  <th><input x-model="columnFilters.need" placeholder="Need" /></th>
+                  <th><input x-model="columnFilters.stock" placeholder="Stock" /></th>
+                  <th><input x-model="columnFilters.reserved" placeholder="Resv" /></th>
+                  <th><input x-model="columnFilters.available" placeholder="Avail" /></th>
+                  <th><input x-model="columnFilters.missing" placeholder="Miss" /></th>
+                  <th><input x-model="columnFilters.reason" placeholder="Reason" /></th>
+                  <th></th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="row in sortedRows" :key="row.key">
+                  <tr :class="[
+                      row.it.status==='PENDING' ? 'row-PENDING' :
+                      row.it.status==='READY' ? 'row-READY' :
+                      'row-COMPLETED',
+                      selectedIds.has(row.it.id) ? 'selected' : ''
+                    ]">
+                    <td><input type="checkbox" :checked="selectedIds.has(row.it.id)" @change="toggleSelected(row.it.id)" x-show="row.pi===0" /></td>
+                    <td class="col-id" x-text="row.pi===0 ? (row.it.business_date || (row.it.created_at||'').slice(0,10)) : ''"></td>
+                    <td class="col-id"><span x-show="row.pi===0" x-text="row.it.pallet_no"></span></td>
+                    <td><span x-show="row.pi===0" class="col-id" x-text="row.it.location || '—'"></span></td>
+                    <td class="col-product"><span x-show="row.pi===0" :title="row.it.product_name || ''" x-text="row.it.product_name || '—'"></span></td>
+                    <td class="col-id"><span x-show="row.pi===0" x-text="row.it.sku"></span></td>
+                    <td class="col-id" x-text="row.p.part_code"></td>
+                    <td class="col-part-name" :title="row.p.part_name || ''" x-text="row.p.part_name || '—'"></td>
+                    <td class="col-num" x-text="row.p.need"></td>
+                    <td class="col-num" :class="row.p.stock > 0 ? 'col-num-pos' : 'col-num-zero'" x-text="row.p.stock"></td>
+                    <td class="col-num" :class="row.p.reserved > 0 ? 'col-num-reserved' : 'col-num-zero'" x-text="row.p.reserved"></td>
+                    <td class="col-num" :class="row.p.available >= row.p.need ? 'col-num-pos' : 'col-num-zero'" x-text="row.p.available"></td>
+                    <td class="col-num" :class="row.p.missing > 0 ? 'col-num-neg' : 'col-num-zero'" x-text="row.p.missing"></td>
+                    <td>
+                      <span class="reason-tag" :class="{
+                          'reason-ok': !row.p.reason || row.p.reason === '已预留' || row.p.reason === '可分配',
+                          'reason-reserved': row.p.reason === '已被其它 READY 单占用' || row.p.reason === '部分被占用，库存不足',
+                          'reason-empty': !row.p.reason || row.p.reason === '可分配'
+                        }" x-text="row.p.reason || '—'"></span>
+                    </td>
+                    <td>
+                      <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
+                    </td>
+                    <td>
+                      <button x-show="row.pi===0 && row.it.status!=='COMPLETED' && user"
+                              @click.stop="openEdit(row.it)" class="btn" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">改</button>
+                      <button x-show="row.pi===0 && row.it.status==='READY' && user && ['repair','admin'].includes(user.role)"
+                              @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">完成</button>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div x-show="filteredItems.length===0" class="empty-state" x-text="hasColumnFilters ? '没有符合筛选条件的数据' : '暂无数据'"></div>
+        </div>
+      </section>
 
       <!-- INVENTORY TAB -->
-      <div x-show="tab==='inventory'" class="panel">
-        <div x-show="user && user.role!=='admin'" class="alert alert-warn">⚠ 上传库存需要 admin 角色。</div>
-        <div x-show="user && user.role==='admin'">
-          <p style="font-size:.875rem; color:var(--fg-2); margin-bottom:.75rem;">
-            CSV 列名（大小写不敏感，可任意顺序）：<br>
-            <code style="font-size:.75rem; padding:.25rem .4rem; background:#f1f5f9; border-radius:.25rem;">
-              part_code, part_name, on_hand_qty, location
-            </code><br>
-            也支持中文列名：编码 / 配件编码、名称 / 配件名称、库存 / 在库数量、位置 / 库位
-          </p>
-          <p style="font-size:.75rem; padding:.5rem; background:var(--amber-bg); color:var(--amber); border-radius:.25rem; margin-bottom:.75rem;">
-            ⚠ 上传后 <b>清空旧库存 + 写入新库存</b>。所有 PENDING/READY 配件状态会自动重新评估（READY ↔ PENDING）。
-          </p>
-          <input type="file" accept=".csv" @change="uploadInventory($event)" style="margin-bottom:.5rem;" />
-          <div x-show="uploadMsg" style="font-size:.875rem;" x-text="uploadMsg"></div>
+      <section x-show="tab==='inventory'" x-cloak>
+        <!-- Stats cards -->
+        <div class="inv-stats">
+          <div class="stat">
+            <div class="lbl">SKU 数</div>
+            <div class="num" x-text="invSummary.sku_count || 0"></div>
+          </div>
+          <div class="stat">
+            <div class="lbl">总库存</div>
+            <div class="num" x-text="(invSummary.total_units || 0).toLocaleString()"></div>
+          </div>
+          <div class="stat alt-open">
+            <div class="lbl">开放工单</div>
+            <div class="num" x-text="invSummary.open_items || 0"></div>
+          </div>
+          <div class="stat alt-pending">
+            <div class="lbl">PENDING 票</div>
+            <div class="num" x-text="invSummary.pending_items || 0"></div>
+          </div>
+          <div class="stat">
+            <div class="lbl">最近更新</div>
+            <div style="font-family:ui-monospace,monospace; font-size:.82rem; color:var(--fg-2); margin-top:.35rem;" x-text="invSummary.last_updated || '—'"></div>
+          </div>
         </div>
 
-        <div class="counts" style="margin-top:1rem;">
-          <div class="count"><div class="lbl">SKU 数</div><div class="num" x-text="invSummary.sku_count || 0"></div></div>
-          <div class="count"><div class="lbl">总库存</div><div class="num" x-text="invSummary.total_units || 0"></div></div>
-          <div class="count"><div class="lbl">最近更新</div><div style="font-family:ui-monospace,monospace; font-size:.85rem; color:var(--fg-2);" x-text="invSummary.last_updated || '—'"></div></div>
+        <!-- Replace inventory (dangerous) panel -->
+        <div class="danger-panel">
+          <h3>
+            <svg viewBox="0 0 24 24" aria-hidden="true" width="18" height="18" stroke="currentColor" fill="none" stroke-width="2">
+              <path d="M12 9v4"/>
+              <path d="M12 17h.01"/>
+              <path d="M10.29 3.86l-7.41 12.86A2 2 0 0 0 4.62 19.5h14.76a2 2 0 0 0 1.74-2.78l-7.42-12.86a2 2 0 0 0-3.42 0z"/>
+            </svg>
+            替换库存（危险操作）
+          </h3>
+          <p>
+            上传 CSV 后会<b>清空旧库存 + 写入新库存</b>。
+            所有 PENDING / READY 配件状态会自动重新评估（READY ↔ PENDING）。仅 admin 可操作。
+          </p>
+          <div x-show="user && user.role!=='admin'" class="alert alert-warn" style="margin:0 0 .85rem;">
+            ⚠ 上传库存需要 admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
+          </div>
+          <div x-show="user && user.role==='admin'" style="display:flex; gap:.65rem; flex-wrap:wrap; align-items:center;">
+            <label class="btn btn-danger" style="cursor:pointer;">
+              <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <path d="M17 8l-5-5-5 5"/>
+                <path d="M12 3v12"/>
+              </svg>
+              上传 CSV
+              <input type="file" accept=".csv" @change="uploadInventory($event)" style="display:none;" />
+            </label>
+            <span style="font-size:.78rem; color:var(--fg-3);">CSV 列名：part_code, part_name, on_hand_qty, location（中文别名也可）</span>
+          </div>
         </div>
 
-        <div style="border-top:1px solid var(--line); margin-top:1rem; padding-top:1rem;">
-          <h3 style="font-size:1rem; margin:0 0 .5rem;">查一个配件库存</h3>
+        <!-- Last upload result -->
+        <div x-show="uploadLastResult" class="inv-result" :class="uploadLastResult && uploadLastResult.ok ? 'ok' : 'bad'">
+          <div class="inv-result-title">
+            <span>最近一次库存上传</span>
+            <button class="btn" @click="uploadLastResult=null" style="padding:.15rem .55rem; font-size:.75rem;">清除</button>
+          </div>
+          <div><b x-text="uploadLastResult.inserted"></b> 行写入</div>
+          <div>重新评估 <b x-text="uploadLastResult.reevaluated"></b> 条</div>
+          <div>
+            <span class="status-chip chip-READY" x-text="(uploadLastResult.status_flip.to_ready || 0) + ' → READY'"></span>
+            <span class="status-chip chip-PENDING" x-text="(uploadLastResult.status_flip.to_pending || 0) + ' → PENDING'"></span>
+          </div>
+        </div>
+        <div x-show="!uploadLastResult && uploadMsg" class="inv-result warn">
+          <div class="inv-result-title">最近一次库存上传</div>
+          <div x-text="uploadMsg"></div>
+        </div>
+
+        <!-- Lookup -->
+        <div class="panel" style="margin-top: 1rem;">
+          <div class="panel-title">查一个配件库存</div>
           <div class="input-row">
             <input x-model="lookupCode" placeholder="part_code" />
-            <button @click="lookupInventory()" class="btn">查</button>
+            <button @click="lookupInventory()" class="btn btn-primary">查</button>
           </div>
-          <div x-show="lookupResult" style="margin-top:.5rem; font-size:.875rem; font-family:ui-monospace,monospace; background:#f1f5f9; padding:.5rem; border-radius:.25rem;" x-text="lookupResult"></div>
+          <div x-show="lookupResult" style="margin-top:.65rem; font-size:.85rem; font-family:ui-monospace,monospace; background:#f1f5f9; padding:.5rem .75rem; border-radius:.4rem;" x-text="lookupResult"></div>
         </div>
-      </div>
+      </section>
 
       <!-- IMPORT TAB -->
-      <div x-show="tab==='import'" class="panel">
-        <h2 style="font-size:1.1rem; margin:0 0 .5rem;">📥 批量导入退件单</h2>
-        <p style="font-size:.875rem; color:var(--fg-3); margin:0 0 .75rem;">
-          一个 CSV 或 XLSX 文件，多张退件单。同一张 <code>pallet_no</code> 多行 = 多配件。
-          <a href="/api/imports/template" @click.prevent="downloadTemplate()" style="color:var(--brand); margin-left:.35rem;">📄 下載模板</a>
+      <section x-show="tab==='import'" x-cloak>
+        <h2 style="font-size:1.1rem; margin:0 0 .35rem;">批量导入退件单</h2>
+        <p style="font-size:.85rem; color:var(--fg-3); margin:0 0 .85rem;">
+          CSV 或 XLSX 文件，一行 = 一个 part，同 pallet 多行 = 同张单多 part。<br>
+          <a href="/api/imports/template" @click.prevent="downloadTemplate()" style="color:var(--brand);">下载模板</a>
         </p>
 
-        <div style="background:var(--amber-bg); padding:.65rem .85rem; border-radius:.5rem; font-size:.85rem; color:var(--amber); margin-bottom:1rem;">
-          ⚠  CSV/XLSX 列认 <b>DATE, PALLET, 次品仓位, 商品名称, SKU, part_code, part_quantity</b>（你的实际格式）<br>
-          也认英文 <code>pallet_no, product_name, sku, qty, location, part_code, part_name, part_qty</code>。<br>
-          同 <b>pallet</b> 多行 = 同张单多 part。次品仓位 = 仓位 / location（存档后可批量修改）。
+        <div x-show="user && !['returns','admin'].includes(user.role)" class="alert alert-warn">
+          ⚠ 批量导入需要 returns / admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
         </div>
 
-        <div class="split-actions" style="margin-bottom:1rem;">
-          <label class="btn btn-primary" style="cursor:pointer;">
-            📂 选择 CSV / XLSX 文件
-            <input type="file" accept=".csv,.txt,.xlsx" @change="uploadImport($event)" style="display:none;" />
-          </label>
-          <span x-show="importingFile" style="align-self:center; font-size:.85rem; color:var(--fg-3);">上传中…</span>
-        </div>
+        <div x-show="user && ['returns','admin'].includes(user.role)">
+          <!-- Drag/drop zone -->
+          <div class="drop-zone"
+               :class="{ 'dragging': dragOver }"
+               @click="$refs.importFileInput.click()"
+               @dragover.prevent="dragOver=true"
+               @dragleave="dragOver=false"
+               @drop.prevent="onImportDrop($event)">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--fg-3); margin-bottom:.5rem;">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <path d="M14 2v6h6"/>
+              <path d="M12 18v-6"/>
+              <path d="M9 15l3-3 3 3"/>
+            </svg>
+            <p class="drop-zone-title">拖入 CSV / XLSX 文件，或点击选择</p>
+            <p class="drop-zone-sub">支持 .csv / .txt / .xlsx</p>
+            <input type="file" x-ref="importFileInput" accept=".csv,.txt,.xlsx" @change="onImportFileChosen($event)" />
+          </div>
 
-        <div x-show="importResult" class="alert" :class="importResult ? (importResult.summary.failed === 0 && importResult.summary.parse_failures_count === 0 ? 'alert-ok' : (importResult.summary.succeeded === 0 ? 'alert-bad' : 'alert-warn')) : ''">
-          <template x-if="importResult">
+          <!-- File preview -->
+          <div x-show="importPreview" class="file-preview">
             <div>
-              <div style="font-weight:600;">
-                <span x-text="importResult.summary.succeeded"></span> / <span x-text="importResult.summary.submitted_tickets"></span> 张成功 ·
-                <span x-text="importResult.summary.failed"></span> 败 ·
-                <span x-text="importResult.summary.parse_failures_count"></span> 行无效
-                (header 检测: <span x-text="importResult.summary.header_detected ? '是' : '否'"></span>)
-              </div>
-              <div x-show="importResult.successes.length" style="margin-top:.5rem;">
-                <b>✓ 成功：</b>
-                <span style="font-family:ui-monospace,monospace;">
-                  <template x-for="s in importResult.successes" :key="s.id">
-                    <span style="margin-right:.5rem;">#<span x-text="s.id"></span> <span x-text="s.status"></span> (<span x-text="s.pallet"></span>)</span>
-                  </template>
-                </span>
-              </div>
-              <div x-show="importResult.failures.length" style="margin-top:.5rem;">
-                <b>✗ 败：</b>
-                <ul style="margin:0; padding-left:1.25rem;">
-                  <template x-for="(f, idx) in importResult.failures" :key="idx + '-' + (f.pallet || '')">
-                    <li style="font-size:.85rem;"><span x-text="f.pallet"></span> → <span x-text="f.error"></span></li>
-                  </template>
-                </ul>
-              </div>
-              <div x-show="importResult.parse_failures_sample.length" style="margin-top:.5rem;">
-                <b>⚠ 解析失败样本：</b>
-                <ul style="margin:0; padding-left:1.25rem;">
-                  <template x-for="p in importResult.parse_failures_sample" :key="p.line">
-                    <li style="font-size:.85rem;">第 <span x-text="p.line"></span> 行 → <span x-text="p.reason"></span></li>
-                  </template>
-                </ul>
-              </div>
+              <h4 x-text="importPreview.filename"></h4>
+              <dl>
+                <dt>格式</dt><dd x-text="importPreview.format"></dd>
+                <template x-if="importPreview.sheet">
+                  <div style="display:contents;"><dt>工作表</dt><dd x-text="importPreview.sheet"></dd></div>
+                </template>
+                <dt>行数</dt><dd x-text="importPreview.rows"></dd>
+                <dt>列数</dt><dd x-text="importPreview.columns"></dd>
+                <dt>检测表头</dt><dd x-text="importPreview.header_detected ? '是' : '否'"></dd>
+                <template x-if="importPreview.date_sample">
+                  <div style="display:contents;"><dt>日期样本</dt><dd x-text="importPreview.date_sample"></dd></div>
+                </template>
+                <dt>预估票数</dt><dd><b x-text="importPreview.estimated_tickets"></b></dd>
+              </dl>
             </div>
-          </template>
+            <div class="preview-actions">
+              <button class="btn btn-primary" @click="confirmImport()" :disabled="importingFile">
+                <span x-text="importingFile ? '导入中…' : '确认导入'"></span>
+              </button>
+              <button class="btn" @click="cancelImportPreview()" :disabled="importingFile">取消</button>
+            </div>
+          </div>
+
+          <!-- Result -->
+          <div x-show="importResult" class="import-result">
+            <h4>
+              <span>导入完成</span>
+              <button class="btn" @click="importResult=null; importPreview=null;" style="padding:.15rem .55rem; font-size:.75rem;">关闭</button>
+            </h4>
+            <div class="ir-status-line">
+              <span class="ir-tag ready">READY <b x-text="importResult.summary.ready_count || 0"></b></span>
+              <span class="ir-tag pending">PENDING <b x-text="importResult.summary.pending_count || 0"></b></span>
+              <span class="ir-tag failed" x-show="importResult.summary.failed > 0">失败 <b x-text="importResult.summary.failed"></b></span>
+              <span class="ir-tag parse" x-show="importResult.summary.parse_failures_count > 0">解析失败 <b x-text="importResult.summary.parse_failures_count"></b></span>
+              <span style="font-size:.78rem; color:var(--fg-3);">
+                共 <b x-text="importResult.summary.submitted_tickets"></b> 票 / <b x-text="importResult.summary.submitted_rows"></b> 行
+              </span>
+            </div>
+            <div x-show="importResult.successes.length">
+              <b style="font-size:.85rem;">成功 <span x-text="importResult.successes.length"></span> 条 · 点开看详情</b>
+              <ul class="ir-success-list">
+                <template x-for="s in importResult.successes.slice(0, 50)" :key="s.id">
+                  <li>
+                    <a href="#" @click.prevent="goToTicket(s.status, s.id)">
+                      #<span x-text="s.id"></span>
+                      <span x-text="s.pallet"></span>
+                      · <span x-text="s.status"></span>
+                      · <span x-text="s.parts"></span> 件
+                    </a>
+                  </li>
+                </template>
+              </ul>
+            </div>
+            <div x-show="importResult.failures.length" style="margin-top:.5rem;">
+              <b style="font-size:.85rem;">保存失败 <span x-text="importResult.failures.length"></span> 条</b>
+              <ul class="ir-failure-list">
+                <template x-for="(f, idx) in importResult.failures.slice(0, 20)" :key="'f-' + idx + '-' + (f.pallet || '')">
+                  <li>
+                    <span x-text="f.pallet || '—'"></span> →
+                    <span class="err-line" x-text="f.error"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+            <div x-show="importResult.parse_failures_sample.length" style="margin-top:.5rem;">
+              <b style="font-size:.85rem;">解析失败样本 <span x-text="importResult.summary.parse_failures_count"></span> 条</b>
+              <ul class="ir-failure-list">
+                <template x-for="p in importResult.parse_failures_sample" :key="'p-' + p.line">
+                  <li>
+                    第 <span class="err-line" x-text="p.line"></span> 行
+                    <span x-show="p.pallet"> · <span x-text="p.pallet"></span></span>
+                    → <span class="err-line" x-text="p.reason"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+            <div style="margin-top:.75rem; display:flex; gap:.5rem; flex-wrap:wrap;">
+              <button class="btn" @click="downloadErrorReport()" :disabled="!importErrorReport">
+                下载错误报告（CSV）
+              </button>
+              <button class="btn" @click="goTab('ready')" x-show="(importResult.summary.ready_count || 0) > 0">
+                打开 READY（<span x-text="importResult.summary.ready_count"></span>）
+              </button>
+              <button class="btn" @click="goTab('pending')" x-show="(importResult.summary.pending_count || 0) > 0">
+                打开 PENDING（<span x-text="importResult.summary.pending_count"></span>）
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
       <!-- USERS TAB (admin) -->
-      <div x-show="tab==='users'" class="panel">
-        <h2 style="font-size:1.1rem; margin:0 0 .5rem;">⚙ 账号管理</h2>
+      <section x-show="tab==='users'" x-cloak>
+      <div class="panel">
+        <div class="panel-title">账号管理</div>
         <p style="font-size:.875rem; color:var(--fg-3); margin:0 0 .75rem;">
           创建账号，分配角色（returns 录入 / repair 维修 / admin 全权）。
         </p>
@@ -668,6 +1132,7 @@
           </div>
         </div>
       </div>
+      </section>
 
   <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
   <div x-show="bulkPartsOpen" x-cloak class="modal-back" @click.self="closeBulkParts()" @keydown.escape.window="closeBulkParts()">
@@ -782,7 +1247,15 @@ function app() {
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
     listStatus: '',
-    columnFilters: { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', qty: '', onHand: '', short: '' },
+    sortKey: 'business_date',
+    sortDir: 'desc',
+    columnFilters: { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' },
+    showForm: false,
+    dragOver: false,
+    importPreview: null,
+    importErrorReport: null,
+    pendingFile: null,
+    uploadLastResult: null,
     get hasColumnFilters() {
       return Object.values(this.columnFilters).some(v => String(v || '').trim());
     },
@@ -790,6 +1263,11 @@ function app() {
       const f = Object.fromEntries(Object.entries(this.columnFilters).map(([k, v]) => [k, String(v || '').trim().toLowerCase()]));
       if (!Object.values(f).some(Boolean)) return this.items || [];
       const includes = (value, query) => !query || String(value ?? '').toLowerCase().includes(query);
+      const numMatches = (part, key) => {
+        const q = f[key];
+        if (!q) return true;
+        return String(part[key] ?? '').includes(q);
+      };
       return (this.items || []).filter(it => {
         const parts = (it.parts && it.parts.length) ? it.parts : [];
         return includes(it.business_date || (it.created_at || '').slice(0, 10), f.date)
@@ -799,10 +1277,20 @@ function app() {
           && includes(it.sku, f.sku)
           && (!f.partCode || parts.some(p => includes(p.part_code, f.partCode)))
           && (!f.partName || parts.some(p => includes(p.part_name, f.partName)))
-          && (!f.qty || parts.some(p => includes(p.need, f.qty)))
-          && (!f.onHand || parts.some(p => includes(p.have, f.onHand)))
-          && (!f.short || parts.some(p => includes(p.short, f.short)));
+          && (!f.need || parts.some(p => numMatches(p, 'need')))
+          && (!f.stock || parts.some(p => numMatches(p, 'stock')))
+          && (!f.reserved || parts.some(p => numMatches(p, 'reserved')))
+          && (!f.available || parts.some(p => numMatches(p, 'available')))
+          && (!f.missing || parts.some(p => numMatches(p, 'missing')))
+          && (!f.reason || parts.some(p => includes(p.reason || '', f.reason)));
       });
+    },
+    get tally() {
+      const tickets = this.filteredItems.length;
+      const parts = this.filteredItems.reduce(
+        (s, it) => s + ((it.parts && it.parts.length) ? it.parts.length : 1), 0
+      );
+      return { tickets, parts };
     },
     get expandedRows() {
       // Flatten items × parts into one row per part for the table view.
@@ -811,10 +1299,27 @@ function app() {
       for (const it of this.filteredItems) {
         const parts = (it.parts && it.parts.length)
           ? it.parts
-          : [{ part_code: '—', part_name: '', need: it.qty, have: 0, short: 0 }];
+          : [{ part_code: '—', part_name: '', need: it.qty, stock: 0, reserved: 0, available: 0, missing: 0, reason: '' }];
         parts.forEach((p, pi) => out.push({ it, p, pi, key: it.id + '-' + pi }));
       }
       return out;
+    },
+    get sortedRows() {
+      const rows = this.expandedRows;
+      const key = this.sortKey;
+      const dir = this.sortDir === 'asc' ? 1 : -1;
+      const cmp = (a, b) => {
+        // Always group by item first so the ticket-info row sits at the top.
+        if (a.it.id !== b.it.id) return a.it.id > b.it.id ? 1 : -1;
+        if (a.pi !== b.pi) return a.pi - b.pi;
+        if (key === 'business_date' || key === 'sku' || key === 'pallet_no') {
+          const av = String(a.it[key] || '');
+          const bv = String(b.it[key] || '');
+          if (av !== bv) return av > bv ? dir : -dir;
+        }
+        return 0;
+      };
+      return rows.slice().sort(cmp);
     },
     form: {
       headers: [
@@ -984,8 +1489,199 @@ function app() {
     },
 
     clearColumnFilters() {
-      this.columnFilters = { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', qty: '', onHand: '', short: '' };
+      this.columnFilters = { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' };
       this.clearSelection();
+    },
+
+    setSort(key) {
+      if (this.sortKey === key) {
+        this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        this.sortKey = key;
+        this.sortDir = 'asc';
+      }
+    },
+
+    goTab(name) {
+      this.tab = name;
+      if (name === 'ready') this.loadList('READY');
+      else if (name === 'pending') this.loadList('PENDING');
+      else if (name === 'history') this.loadList('COMPLETED');
+    },
+
+    goToTicket(status, id) {
+      // Switch to the right tab and open the edit modal for the given ticket.
+      this.tab = status === 'READY' ? 'ready' : (status === 'PENDING' ? 'pending' : 'history');
+      this.loadList(status).then(() => {
+        const it = (this.items || []).find(x => x.id === id);
+        if (it && this.openEdit) this.openEdit(it);
+      });
+    },
+
+    onImportDrop(ev) {
+      this.dragOver = false;
+      const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (!f) return;
+      this._prepareImportPreview(f);
+    },
+
+    onImportFileChosen(ev) {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      this._prepareImportPreview(f);
+      // Reset the input so re-selecting the same file fires change again.
+      ev.target.value = '';
+    },
+
+    async _prepareImportPreview(f) {
+      this.importResult = null;
+      this.importErrorReport = null;
+      this.pendingFile = f;
+      const lower = (f.name || '').toLowerCase();
+      const format = lower.endsWith('.xlsx') ? 'XLSX' : 'CSV';
+      let rows = 0;
+      let columns = 0;
+      let date_sample = '';
+      let header_detected = false;
+      let sheet = '';
+      try {
+        if (format === 'XLSX') {
+          const buf = await f.arrayBuffer();
+          const wb = window.XLSX ? window.XLSX.read(new Uint8Array(buf), { type: 'array' }) : null;
+          if (wb) {
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            sheet = wb.SheetNames[0] || '';
+            if (ws) {
+              const arr = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+              rows = Math.max(0, arr.length - 1);
+              columns = arr[0] ? arr[0].length : 0;
+              // First data row date sample.
+              if (arr[1]) {
+                for (let c of arr[1]) {
+                  if (c && /\d/.test(String(c))) { date_sample = String(c); break; }
+                }
+              }
+            }
+          }
+        } else {
+          const text = await f.text();
+          const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim());
+          rows = Math.max(0, lines.length - 1);
+          const first = lines[0] || '';
+          columns = first.split(/[,\t]/).length;
+          header_detected = /date|pallet|sku|qty|part/i.test(first);
+          if (lines[1]) {
+            const cells = lines[1].split(/[,\t]/);
+            for (let c of cells) {
+              if (c && /\d/.test(c)) { date_sample = c.trim(); break; }
+            }
+          }
+        }
+      } catch (e) {
+        // preview is best-effort; fall through with zeros
+        console.warn('preview parse failed', e);
+      }
+      // Estimate ticket count = distinct pallet count in first 200 rows (approx).
+      let estimated = Math.max(1, rows);
+      try {
+        const text = format === 'CSV' ? await f.text() : null;
+        if (text) {
+          const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim()).slice(1, 200);
+          const pallets = new Set();
+          for (const l of lines) {
+            const cells = l.split(/[,\t]/);
+            // best guess: pallet is column 1 if header detected, else 0/1
+            const p = (cells[1] || cells[0] || '').trim();
+            if (p) pallets.add(p);
+          }
+          if (pallets.size) estimated = pallets.size;
+        }
+      } catch (e) {}
+      this.importPreview = {
+        filename: f.name,
+        format, sheet,
+        rows, columns,
+        header_detected,
+        date_sample,
+        estimated_tickets: estimated,
+        size: f.size,
+      };
+    },
+
+    cancelImportPreview() {
+      this.importPreview = null;
+      this.pendingFile = null;
+      this.importResult = null;
+      this.importErrorReport = null;
+    },
+
+    async confirmImport() {
+      if (!this.pendingFile) return;
+      this.importingFile = true;
+      this.importResult = null;
+      this.importErrorReport = null;
+      const fd = new FormData();
+      fd.append('file', this.pendingFile);
+      try {
+        const r = await fetch('/api/imports/defectives', { method: 'POST', body: fd, credentials: 'include' });
+        const text = await r.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) { /* keep null */ }
+        if (!r.ok) {
+          const detail = (data && (data.detail || data.error)) || (text && text.slice(0, 300)) || ('HTTP ' + r.status);
+          this.importResult = {
+            summary: { failed: 1, parse_failures_count: 0, header_detected: false, succeeded: 0, submitted_tickets: 0, submitted_rows: 0, ready_count: 0, pending_count: 0 },
+            successes: [],
+            failures: [{ pallet: '—', error: detail }],
+            parse_failures_sample: [],
+          };
+        } else {
+          this.importResult = data || {
+            summary: { succeeded: 0, failed: 1, parse_failures_count: 0, submitted_tickets: 0, header_detected: false, ready_count: 0, pending_count: 0 },
+            successes: [],
+            failures: [{ pallet: '—', error: 'empty response' }],
+            parse_failures_sample: [],
+          };
+          this.importPreview = null;
+          this.pendingFile = null;
+          this.importErrorReport = this._buildErrorReport(this.importResult);
+          this.loadCounts();
+        }
+      } catch (e) {
+        this.importResult = {
+          summary: { failed: 1, parse_failures_count: 0, header_detected: false, succeeded: 0, submitted_tickets: 0, submitted_rows: 0, ready_count: 0, pending_count: 0 },
+          successes: [],
+          failures: [{ pallet: '—', error: e.message || '网络错误' }],
+          parse_failures_sample: [],
+        };
+      } finally {
+        this.importingFile = false;
+      }
+    },
+
+    _buildErrorReport(result) {
+      if (!result) return null;
+      const rows = [['kind', 'pallet', 'line', 'reason']];
+      for (const f of result.failures || []) rows.push(['save', f.pallet || '', '', f.error || '']);
+      for (const p of result.parse_failures_sample || []) rows.push(['parse', p.pallet || '', p.line || '', p.reason || '']);
+      if (rows.length <= 1) return null;
+      return rows.map(r => r.map(c => {
+        const s = String(c == null ? '' : c);
+        return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(',')).join('\n');
+    },
+
+    downloadErrorReport() {
+      if (!this.importErrorReport) return;
+      const blob = new Blob([this.importErrorReport], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'jstreturn-import-errors-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     },
 
     async loadSummary() {
@@ -1407,17 +2103,26 @@ function app() {
       fd.append('file', f);
       try {
         const r = await fetch('/api/inventory/upload', { method: 'POST', body: fd, credentials: 'include' });
-        const data = await r.json();
-        if (r.ok) {
-          this.uploadMsg = '✓ 入库 ' + data.inserted + ' 行，重新评估 ' + data.reevaluated + ' 条（' +
-                           data.status_flip.to_pending + ' → PENDING, ' +
-                           data.status_flip.to_ready + ' → READY）';
+        const text = await r.text();
+        let data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (_) { data = null; }
+        if (r.ok && data) {
+          this.uploadMsg = '';
+          this.uploadLastResult = {
+            ok: true,
+            inserted: data.inserted || 0,
+            reevaluated: data.reevaluated || 0,
+            status_flip: data.status_flip || { to_pending: 0, to_ready: 0 },
+            timestamp: new Date().toISOString(),
+          };
           this.loadSummary();
         } else {
-          this.uploadMsg = '✗ ' + (data.detail || JSON.stringify(data));
+          this.uploadMsg = '✗ ' + ((data && (data.detail || data.error)) || text.slice(0, 200) || ('HTTP ' + r.status));
+          this.uploadLastResult = { ok: false, inserted: 0, reevaluated: 0, status_flip: { to_pending: 0, to_ready: 0 }, timestamp: new Date().toISOString() };
         }
       } catch (e) {
         this.uploadMsg = '✗ ' + e.message;
+        this.uploadLastResult = { ok: false, inserted: 0, reevaluated: 0, status_flip: { to_pending: 0, to_ready: 0 }, timestamp: new Date().toISOString() };
       }
       ev.target.value = '';
     },
