@@ -777,7 +777,7 @@ function app() {
         const parts = (it.parts && it.parts.length)
           ? it.parts
           : [{ part_code: '—', part_name: '', need: it.qty, have: 0, short: 0 }];
-        parts.forEach((p, pi) => out.push({ it, p, pi, key: it.id + '-' + (p.part_code || pi) }));
+        parts.forEach((p, pi) => out.push({ it, p, pi, key: it.id + '-' + pi }));
       }
       return out;
     },
