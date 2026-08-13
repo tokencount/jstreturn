@@ -21,6 +21,7 @@ import json
 import unittest
 import zipfile
 from datetime import date, datetime, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import app.routers.exports as exports_mod
@@ -484,6 +485,173 @@ class PurchaseExportParamTests(unittest.TestCase):
         c = TestClient(self.app)
         r = c.get("/api/exports/purchase", params={"business_date": "not-a-date"})
         self.assertEqual(r.status_code, 400, r.text)
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the deployed-path fix (template must live INSIDE
+# the deployed repo at app/templates/purchase_template.xlsx so Render
+# can find it without needing any workspace-level media/ folder).
+# ---------------------------------------------------------------------------
+
+class TemplatePathRegressionTests(unittest.TestCase):
+    def test_template_path_lives_under_app_templates(self):
+        """TEMPLATE_PATH must point inside app/templates so it ships with
+        the deployed repo on Render (project root = /opt/render/project/src).
+        """
+        p = exports_mod.TEMPLATE_PATH
+        self.assertTrue(p.is_absolute(), f"template path should be absolute, got {p}")
+        parts = p.parts
+        # .../app/templates/purchase_template.xlsx
+        self.assertIn("app", parts)
+        self.assertIn("templates", parts)
+        self.assertEqual(p.name, "purchase_template.xlsx")
+        # The path must NOT escape the app-src repo root.
+        self.assertNotIn("media", parts, "template should not depend on media/ folder")
+        self.assertNotIn("inbound", parts)
+
+    def test_template_file_exists_at_deployed_path(self):
+        """The xlsx file must exist at TEMPLATE_PATH on disk so Render
+        can load it after the repo is cloned to /opt/render/project/src.
+        """
+        self.assertTrue(
+            exports_mod.TEMPLATE_PATH.exists(),
+            f"template missing at {exports_mod.TEMPLATE_PATH}",
+        )
+
+    def test_resolve_template_path_returns_existing_file(self):
+        p = exports_mod._resolve_template_path()
+        self.assertTrue(p.exists(), f"_resolve_template_path returned missing path {p}")
+        # Should prefer the in-repo path over the legacy media/ one.
+        self.assertEqual(p, exports_mod.TEMPLATE_PATH)
+
+    def test_template_path_relative_to_exports_module(self):
+        """Even if exports.py is moved deeper in the tree, the template
+        path should still resolve to <exports_dir>/../templates/... (i.e.
+        a sibling-of-app module path), not to some absolute workspace path.
+        """
+        from app.routers import exports as exports_mod_check
+        expected = (
+            Path(exports_mod_check.__file__).resolve().parent.parent
+            / "templates"
+            / "purchase_template.xlsx"
+        )
+        self.assertEqual(exports_mod_check.TEMPLATE_PATH, expected)
+
+    def test_empty_prefix_file_included_when_only_some_warehouses_match(self):
+        """Verify the ZIP contains one xlsx per warehouse prefix that has
+        rows, with empty-prefix files emitted as required. When a prefix
+        has zero rows it is skipped (not emitted as empty xlsx)."""
+        items = [
+            {
+                "id": 1, "pallet_no": "P", "sku": "S", "qty": 1, "status": "PENDING",
+                "created_at": datetime(2026, 8, 14, 1, 0, 0, tzinfo=timezone.utc),
+                "parts": [{"part_code": "HE-ONLY-001", "qty": 5}],
+            },
+        ]
+        inv = {"HE-ONLY-001": 0}
+        app_, _user = _build_app("returns")
+        conn = _FakeConn()
+        _seed_db(conn, items, inv)
+        with patch.object(db_mod, "pool", lambda: make_pool_with(conn)):
+            from fastapi.testclient import TestClient
+            c = TestClient(app_)
+            r = c.get("/api/exports/purchase", params={"business_date": "2026-08-14"})
+        self.assertEqual(r.status_code, 200, r.text)
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        names = sorted(z.namelist())
+        # Only HE has rows → only HE-*.xlsx is in the ZIP; HS/HU omitted.
+        self.assertEqual(names, ["HE-采购配件-2026-08-14.xlsx"])
+
+
+class TemplateGuardRegressionTests(unittest.TestCase):
+    """Static checks that the Alpine template guards null access on
+    purchaseSummary so the page does not throw
+    `Cannot read properties of null (reading 'skipped_count')` before
+    the user has run an export.
+    """
+
+    TEMPLATE_FILE = Path(__file__).resolve().parent.parent / "app" / "templates" / "index.html"
+
+    def _load_template(self) -> str:
+        self.assertTrue(self.TEMPLATE_FILE.exists(), f"missing {self.TEMPLATE_FILE}")
+        return self.TEMPLATE_FILE.read_text(encoding="utf-8")
+
+    def test_purchase_skipped_count_guarded_with_null_check(self):
+        html = self._load_template()
+        # The original bug: `x-show="purchaseSummary.skipped_count > 0"`
+        # threw when purchaseSummary was null. Must now be guarded.
+        self.assertIn("purchaseSummary && purchaseSummary.skipped_count", html)
+
+    def test_purchase_business_date_guarded(self):
+        html = self._load_template()
+        self.assertIn("(purchaseSummary && purchaseSummary.business_date)", html)
+
+    def test_purchase_by_warehouse_guarded(self):
+        html = self._load_template()
+        self.assertIn(
+            "(purchaseSummary && purchaseSummary.by_warehouse && purchaseSummary.by_warehouse.HS)",
+            html,
+        )
+
+    def test_purchase_skipped_part_codes_guarded(self):
+        html = self._load_template()
+        self.assertIn(
+            "(purchaseSummary && purchaseSummary.skipped_part_codes)",
+            html,
+        )
+
+    def test_repair_ready_inner_xif_replaced_with_xshow(self):
+        """The READY tab inner x-if inside an x-for caused Alpine
+        `Cannot read properties of null (reading 'after')` page errors.
+        The empty-state must now use x-show (no <template x-if> nested
+        inside the rc-parts x-for).
+        """
+        import re
+        html = self._load_template()
+        # Find the rc-parts block (everything between <div class="rc-parts">
+        # and its closing </div>).
+        m = re.search(
+            r'<div class="rc-parts">\s*(.*?)\s*</div>\s*</article>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(m, "rc-parts block not found")
+        rc_parts = m.group(1)
+        # No nested <template x-if> allowed inside the rc-parts x-for.
+        self.assertNotIn("<template x-if", rc_parts, "x-if still nested inside rc-parts x-for")
+        # x-show empty-state must exist.
+        self.assertIn('x-show="!((it.parts || []).filter(', rc_parts)
+
+    def test_mobile_parts_xif_replaced_with_xshow(self):
+        """Same fix for the mobile parts list x-for."""
+        import re
+        html = self._load_template()
+        # The mobile parts-list uses <template x-for="p in (it.parts || [])">
+        # Match the whole block from the template opener up to the </ul> closing
+        # the parts-list (so we capture both the x-for template and the
+        # sibling x-show empty-state).
+        m = re.search(
+            r'<template x-for="p in \(it\.parts \|\| \[\]\)" :key="\'mp-\' \+ it\.id \+ \'-\' \+ p\.part_code">.*?</ul>',
+            html,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(m, "mobile parts x-for block not found")
+        body = m.group(0)
+        # No nested <template x-if> inside the x-for template.
+        # (The x-for template ends at </template>; check only inside it.)
+        inside_template = re.search(
+            r'<template x-for="p in \(it\.parts \|\| \[\]\)" :key="\'mp-\' \+ it\.id \+ \'-\' \+ p\.part_code">(.*?)</template>',
+            body,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(inside_template, "inner template not found")
+        self.assertNotIn(
+            "<template x-if",
+            inside_template.group(1),
+            "x-if still nested inside mobile parts x-for",
+        )
+        # x-show empty-state must exist as a sibling.
+        self.assertIn('x-show="!(it.parts && it.parts.length)"', body)
 
 
 if __name__ == "__main__":

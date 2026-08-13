@@ -45,16 +45,42 @@ WAREHOUSE_MAP: dict[str, str] = {
     "HU": "HU168-自营仓",
 }
 
-# Path to the upstream Excel template. The route is shipped together
-# with the workspace — adjust here if the file is ever relocated.
-# Path walk-up: exports.py -> app/routers -> app -> app-src -> workspace-jstreturn
+# Path to the upstream Excel template. The template is shipped INSIDE
+# the deployed repo at app/templates/purchase_template.xlsx so it is
+# always present on Render (`/opt/render/project/src/app/templates/...`)
+# without depending on any workspace-level `media/inbound/...` folder.
+#
+# Resolution:
+#   exports.py -> app/routers/ -> app/ -> templates/purchase_template.xlsx
+#
+# Tests can still monkey-patch TEMPLATE_PATH or pass an explicit
+# template_path= into build_purchase_zip().
 TEMPLATE_PATH = (
-    Path(__file__).resolve().parent.parent.parent.parent
-    / "media"
-    / "inbound"
-    / "openclaw-staged-74fc7f7e-9d66-4109-a8b3-76b76906f50f"
-    / "poin_1---4900ea7d-5685-4f68-a71d-a3a55621efb0.xlsx"
+    Path(__file__).resolve().parent.parent / "templates" / "purchase_template.xlsx"
 )
+
+
+def _resolve_template_path() -> Path:
+    """Return the on-disk template path, falling back to the legacy
+    workspace-level media/inbound location if the in-repo template is
+    missing.
+
+    Keeps production deployments self-contained (Render only ships the
+    repo, not the workspace `media/` folder) while letting devs that
+    keep their template under media/inbound keep working without an
+    extra copy step.
+    """
+    if TEMPLATE_PATH.exists():
+        return TEMPLATE_PATH
+    # Legacy fallback: media/inbound/<stage-id>/poin_1---...xlsx
+    legacy = (
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "media"
+        / "inbound"
+        / "openclaw-staged-74fc7f7e-9d66-4109-a8b3-76b76906f50f"
+        / "poin_1---4900ea7d-5685-4f68-a71d-a3a55621efb0.xlsx"
+    )
+    return legacy
 
 router = APIRouter(prefix="/api/exports", tags=["exports"])
 
@@ -249,7 +275,7 @@ def build_purchase_zip(
     We build each xlsx against a freshly-loaded copy of the template
     workbook so a single template is not mutated across prefixes.
     """
-    template_path = template_path or TEMPLATE_PATH
+    template_path = template_path or _resolve_template_path()
     if not template_path.exists():
         raise HTTPException(500, f"purchase export template missing at {template_path}")
 

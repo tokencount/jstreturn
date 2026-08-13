@@ -61,8 +61,13 @@ class RepairViewMarkupTests(unittest.TestCase):
     def test_repair_card_part_code_repeats_one_row_per_part(self):
         html = _read()
         section = html.split("class=\"repair-only\"", 1)[1].split("</section>", 1)[0]
-        # There's a template x-for over parts
-        self.assertIn("x-for=\"p in (it.parts", section)
+        # There's a template x-for over parts (with optional filter on
+        # empty part_codes). Either form is acceptable.
+        self.assertTrue(
+            "x-for=\"p in (it.parts" in section
+            or "x-for=\"p in ((it.parts" in section,
+            "x-for over it.parts not found in repair view",
+        )
         # Each part row shows part_code + qty
         self.assertIn("p.part_code", section)
         self.assertIn("p.need", section)

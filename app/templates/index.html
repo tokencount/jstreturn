@@ -1488,15 +1488,17 @@
                              x-text="(p.missing || 0) <= 0 ? '✓' : '✗'"></div>
                       </li>
                     </template>
-                    <template x-if="!(it.parts && it.parts.length)">
-                      <li>
-                        <div class="pcode">—</div>
-                        <div class="pname">无配件</div>
-                        <div class="pstock">库存 0</div>
-                        <div class="pqty">需 <span x-text="it.qty"></span></div>
-                        <div class="pmark bad">✗</div>
-                      </li>
-                    </template>
+                    <!-- Empty-state uses x-show (not x-if) so Alpine does not
+                         have to track a separate template anchor during x-for
+                         reorders (avoids `Cannot read properties of null
+                         (reading 'after')` page errors). -->
+                    <li x-show="!(it.parts && it.parts.length)">
+                      <div class="pcode">—</div>
+                      <div class="pname">无配件</div>
+                      <div class="pstock">库存 0</div>
+                      <div class="pqty">需 <span x-text="it.qty"></span></div>
+                      <div class="pmark bad">✗</div>
+                    </li>
                   </ul>
                 </details>
                 <div class="card-actions">
@@ -1576,18 +1578,20 @@
                 </div>
               </div>
               <div class="rc-parts">
-                <template x-for="p in (it.parts || []).filter(p => (p.part_code || '').trim())" :key="'repp-' + it.id + '-' + p.part_code">
+                <template x-for="p in ((it.parts || []).filter(p => (p.part_code || '').trim()))" :key="'repp-' + it.id + '-' + p.part_code">
                   <div class="rc-part">
                     <span class="pc" :title="p.part_code" x-text="p.part_code"></span>
                     <span class="qty" x-text="p.need || p.qty || 0"></span>
                   </div>
                 </template>
-                <template x-if="!(it.parts && it.parts.length)">
-                  <div class="rc-part">
-                    <span class="pc">—</span>
-                    <span class="qty">0</span>
-                  </div>
-                </template>
+                <!-- Empty-state is rendered outside the inner x-for so Alpine
+                     does not have to move a stale x-if anchor during x-for
+                     reorders (which triggers a `Cannot read properties of
+                     null (reading 'after')` page error on the READY tab). -->
+                <div class="rc-part" x-show="!((it.parts || []).filter(p => (p.part_code || '').trim()).length)">
+                  <span class="pc">—</span>
+                  <span class="qty">0</span>
+                </div>
               </div>
               <div class="rc-actions">
                 <button class="btn btn-primary" @click="complete(it.id)">完成</button>
@@ -1919,28 +1923,28 @@
           <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap;">
             <div>
               <div style="font-weight:600;">
-                上次导出 <span x-text="purchaseSummary.business_date || ''"></span>
-                · <span x-text="purchaseSummary.row_count || 0"></span> 行
+                上次导出 <span x-text="(purchaseSummary && purchaseSummary.business_date) || ''"></span>
+                · <span x-text="(purchaseSummary && purchaseSummary.row_count) || 0"></span> 行
               </div>
               <div style="font-size:.8rem; color:var(--fg-3); margin-top:.15rem;">
                 Warehouse 分发：
-                HS: <b x-text="purchaseSummary.by_warehouse ? purchaseSummary.by_warehouse.HS : 0"></b> ·
-                HE: <b x-text="purchaseSummary.by_warehouse ? purchaseSummary.by_warehouse.HE : 0"></b> ·
-                HU: <b x-text="purchaseSummary.by_warehouse ? purchaseSummary.by_warehouse.HU : 0"></b>
+                HS: <b x-text="((purchaseSummary && purchaseSummary.by_warehouse && purchaseSummary.by_warehouse.HS) || 0)"></b> ·
+                HE: <b x-text="((purchaseSummary && purchaseSummary.by_warehouse && purchaseSummary.by_warehouse.HE) || 0)"></b> ·
+                HU: <b x-text="((purchaseSummary && purchaseSummary.by_warehouse && purchaseSummary.by_warehouse.HU) || 0)"></b>
               </div>
             </div>
-            <div x-show="purchaseSummary.skipped_count > 0" class="alert alert-warn" style="margin:0;">
-              ⚠ 跳过 <b x-text="purchaseSummary.skipped_count"></b> 个 part（不在 HS/HE/HU）：
-              <code style="margin-left:.35rem;" x-text="(purchaseSummary.skipped_prefixes || []).join(', ')"></code>
+            <div x-show="purchaseSummary && purchaseSummary.skipped_count > 0" class="alert alert-warn" style="margin:0;">
+              ⚠ 跳过 <b x-text="(purchaseSummary && purchaseSummary.skipped_count) || 0"></b> 个 part（不在 HS/HE/HU）：
+              <code style="margin-left:.35rem;" x-text="((purchaseSummary && purchaseSummary.skipped_prefixes) || []).join(', ')"></code>
               <details style="margin-top:.4rem;">
                 <summary style="cursor:pointer; color:var(--brand);">查看被跳过的明细</summary>
                 <table class="def-table" style="margin-top:.5rem;">
                   <thead><tr><th>part_code</th><th>qty</th></tr></thead>
                   <tbody>
-                    <template x-for="(row, idx) in (purchaseSummary.skipped_part_codes || [])" :key="'sk-' + idx">
+                    <template x-for="(row, idx) in ((purchaseSummary && purchaseSummary.skipped_part_codes) || [])" :key="'sk-' + idx">
                       <tr><td x-text="row[0]"></td><td x-text="row[1]"></td></tr>
                     </template>
-                    <template x-if="!(purchaseSummary.skipped_part_codes || []).length">
+                    <template x-if="!(((purchaseSummary && purchaseSummary.skipped_part_codes) || []).length)">
                       <tr><td colspan="2" style="color:var(--fg-3);">无</td></tr>
                     </template>
                   </tbody>
