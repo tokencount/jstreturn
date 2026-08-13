@@ -24,7 +24,7 @@ import io
 import json
 import re
 import time
-from datetime import date
+from datetime import date, datetime, timedelta
 from collections import defaultdict
 from typing import Optional
 
@@ -71,6 +71,44 @@ def _find_col(headers, *aliases):
         if a_norm in headers:
             return headers.index(a_norm)
     return None
+
+
+def _parse_business_date(value: str) -> date:
+    """Parse dates commonly produced by Excel and CSV exports.
+
+    Day-first is used for ambiguous numeric dates, matching the business
+    spreadsheets used in Malaysia. Excel serial dates are also accepted.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return date.today()
+
+    # Excel's 1900 date system, including its historical leap-year offset.
+    if re.fullmatch(r"\d+(?:\.0+)?", raw):
+        serial = int(float(raw))
+        if 1 <= serial <= 2958465:
+            parsed = date(1899, 12, 30) + timedelta(days=serial)
+            if date(1900, 1, 1) <= parsed <= date(9999, 12, 31):
+                return parsed
+
+    # ISO is unambiguous and remains the preferred format.
+    iso_candidate = raw.split("T", 1)[0].split(" ", 1)[0]
+    try:
+        return date.fromisoformat(iso_candidate)
+    except ValueError:
+        pass
+
+    for fmt in (
+        "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
+        "%d/%m/%y", "%d-%m-%y", "%d.%m.%y",
+        "%Y/%m/%d", "%Y.%m.%d",
+        "%d %b %Y", "%d %B %Y",
+    ):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"unrecognized date: {raw}")
 
 
 # Patterns for multi-part syntax in a single cell.
@@ -237,9 +275,9 @@ async def _upload_defectives_impl(
 
         raw_date = at(date_idx)
         try:
-            business_date = date.fromisoformat(raw_date) if raw_date else date.today()
+            business_date = _parse_business_date(raw_date)
         except ValueError:
-            parse_failures.append({"line": line_no, "reason": "bad DATE; use YYYY-MM-DD", "pallet": pallet})
+            parse_failures.append({"line": line_no, "reason": f"unrecognized DATE: {raw_date}", "pallet": pallet})
             continue
 
         # Resolve the part column cell (may contain multi-part syntax).
