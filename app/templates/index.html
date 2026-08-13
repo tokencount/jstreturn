@@ -65,6 +65,7 @@
       color: var(--fg);
       background: var(--bg);
       min-height: 100vh;
+      overflow-x: hidden;
     }
     [x-cloak] { display: none !important; }
     .container { max-width: 72rem; margin: 0 auto; padding: 1rem 1.5rem; }
@@ -239,7 +240,7 @@
        Mobile (≤720px): workbench-table is hidden; mobile-cards are
        shown; bottom sticky filter bar is shown.
        ============================================================ */
-    .mobile-list { display: none; }
+    .mobile-list { display: none; max-width: 100%; min-width: 0; overflow: hidden; }
     .mobile-cards-empty {
       text-align: center; color: var(--fg-3);
       padding: var(--space-5) 0;
@@ -251,6 +252,9 @@
       border-radius: var(--radius-lg);
       padding: var(--space-3) var(--space-4);
       box-shadow: var(--shadow-sm);
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
     }
     .card + .card { margin-top: var(--space-3); }
     .card-row-1 {
@@ -258,6 +262,7 @@
       grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
       gap: var(--space-2);
       align-items: center;
+      min-width: 0;
     }
     .card-row-2 {
       display: flex;
@@ -266,10 +271,13 @@
       font-size: var(--fs-sm);
       color: var(--fg-2);
       min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
     }
     .card-row-2 .ellipsis {
       min-width: 0;
       flex: 1 1 auto;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -283,6 +291,8 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
+      max-width: 100%;
     }
     .card-row-1 .sku {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -291,9 +301,12 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      min-width: 0;
+      max-width: 100%;
     }
     .card-row-1 .chip {
       justify-self: end;
+      min-width: 0;
     }
     .card-meta {
       display: flex;
@@ -301,14 +314,20 @@
       font-size: var(--fs-xs);
       color: var(--fg-3);
       margin-top: var(--space-2);
+      min-width: 0;
+      max-width: 100%;
+      flex-wrap: wrap;
+      overflow: hidden;
     }
     .card-meta .lbl { color: var(--fg-3); }
-    .card-meta .val { color: var(--fg); font-weight: 500; }
+    .card-meta .val { color: var(--fg); font-weight: 500; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-actions {
       display: flex;
       gap: var(--space-2);
       justify-content: flex-end;
       margin-top: var(--space-3);
+      flex-wrap: wrap;
+      max-width: 100%;
     }
     .card-actions .btn {
       padding: .3rem .65rem;
@@ -417,15 +436,17 @@
 
     @media (max-width: 720px) {
       .split { grid-template-columns: 1fr; }
-      body { padding-bottom: calc(var(--mobile-bar-height) + var(--safe-bottom)); }
+      body { padding-bottom: calc(var(--mobile-bar-height) + var(--safe-bottom)); overflow-x: hidden; }
       .desktop-only { display: none !important; }
 
       /* Hide desktop workbench table on mobile */
       .workbench-wrap { display: none !important; }
 
       /* Show mobile cards */
-      .mobile-list { display: block; }
-      .mobile-list .row-list { display: grid; gap: var(--space-3); }
+      .mobile-list { display: block; max-width: 100%; min-width: 0; overflow: hidden; }
+      .mobile-list .row-list { display: grid; gap: var(--space-3); max-width: 100%; min-width: 0; }
+      .mobile-list .card { max-width: 100%; min-width: 0; overflow: hidden; }
+      .card-row-1, .card-row-2, .card-meta, .card-actions { min-width: 0; max-width: 100%; }
 
       /* Show sticky mobile filter bar at the bottom */
       .mobile-filter-bar {
@@ -600,10 +621,21 @@
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: .65rem;
-      overflow: hidden;
+      /* Removed overflow:hidden — it was hiding the horizontal scrollbar
+         from .table-scroll and clipping the right-side columns. */
+      overflow: visible;
+      max-width: 100%;
+      min-width: 0;
     }
-    .table-scroll { overflow-x: auto; max-height: 70vh; }
-    table.workbench { width: 100%; font-size: .85rem; border-collapse: separate; border-spacing: 0; }
+    .workbench-wrap { max-width: 100%; min-width: 0; }
+    .table-scroll { overflow-x: auto; max-height: 70vh; max-width: 100%; }
+    table.workbench {
+      width: 100%;
+      min-width: 96rem; /* sum of column widths — prevents column crush on narrow viewports */
+      font-size: .85rem;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
     .workbench thead th {
       position: sticky; top: 0; z-index: 2;
       background: #f8fafc;

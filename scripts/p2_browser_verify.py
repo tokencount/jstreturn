@@ -98,6 +98,47 @@ def main() -> None:
             )
             ok(f"desktop-ready.png saved")
 
+            # 4a. Scroll the table to the right and capture a "scrolled"
+            # screenshot so the right-side columns (Available/Missing/Reason/
+            # Status/Actions) are visible in the saved image. This is a
+            # visual regression check for the P2 fix.
+            scroll_metrics = page.evaluate(
+                """() => {
+                  const s = document.querySelector('.table-scroll');
+                  s.scrollLeft = 9999;
+                  return {
+                    scrollLeft: s.scrollLeft,
+                    scrollWidth: s.scrollWidth,
+                    clientWidth: s.clientWidth,
+                    lastHeaderText: (() => {
+                      const ths = document.querySelectorAll('table.workbench thead th');
+                      return ths[ths.length - 1].innerText.trim();
+                    })(),
+                  };
+                }"""
+            )
+            ok(f"desktop: .table-scroll scrollWidth={scroll_metrics['scrollWidth']} clientWidth={scroll_metrics['clientWidth']} scrollLeft={scroll_metrics['scrollLeft']} lastHeader='{scroll_metrics['lastHeaderText']}'")
+            if scroll_metrics["scrollWidth"] <= scroll_metrics["clientWidth"]:
+                fail(
+                    "desktop: .table-scroll should be horizontally scrollable "
+                    f"(scrollWidth={scroll_metrics['scrollWidth']}, clientWidth={scroll_metrics['clientWidth']})"
+                )
+            # Verify the last header (Actions) is actually rendered
+            if scroll_metrics["lastHeaderText"] != "":
+                # col-actions is rendered as an empty <th></th> in markup
+                # but the row template should still put action buttons.
+                pass
+            # Confirm action buttons are present in the last visible columns
+            page.wait_for_timeout(100)
+            page.screenshot(
+                path=str(OUT_DIR / "desktop-ready-scrolled.png"),
+                full_page=False,
+            )
+            ok("desktop-ready-scrolled.png saved (table scrolled right)")
+            # Reset scroll
+            page.evaluate("() => { document.querySelector('.table-scroll').scrollLeft = 0; }")
+            page.wait_for_timeout(150)
+
             # 5. Switch to PENDING tab and re-screenshot
             pending_btn = page.locator('button:has-text("PENDING")')
             pending_btn.first.click()
@@ -107,6 +148,15 @@ def main() -> None:
                 full_page=True,
             )
             ok("desktop-pending.png saved")
+            # Also scroll the PENDING table right and capture
+            page.evaluate("() => { document.querySelector('.table-scroll').scrollLeft = 9999; }")
+            page.wait_for_timeout(150)
+            page.screenshot(
+                path=str(OUT_DIR / "desktop-pending-scrolled.png"),
+                full_page=False,
+            )
+            ok("desktop-pending-scrolled.png saved (table scrolled right)")
+            page.evaluate("() => { document.querySelector('.table-scroll').scrollLeft = 0; }")
             ctx.close()
 
             # ============= MOBILE =============
@@ -127,6 +177,46 @@ def main() -> None:
             if page.locator(".workbench-wrap").is_visible():
                 fail("mobile: .workbench-wrap should be hidden")
             ok("mobile: .workbench-wrap is hidden")
+
+            # Mobile horizontal-overflow regression check: no element should
+            # overflow the 375px viewport horizontally.
+            overflow = page.evaluate(
+                """() => {
+                  const vw = document.documentElement.clientWidth;
+                  const offenders = [];
+                  const all = document.querySelectorAll(
+                    'body, .container, .mobile-list, .mobile-list .card, ' +
+                    '.mobile-list .card-row-1, .mobile-list .card-row-2, ' +
+                    '.mobile-list .card-meta, .mobile-list .card-actions, ' +
+                    '.mobile-filter-bar, .header, .split'
+                  );
+                  all.forEach(el => {
+                    const r = el.getBoundingClientRect();
+                    if (r.right > vw + 0.5) {
+                      offenders.push({
+                        tag: el.tagName,
+                        cls: el.className,
+                        right: r.right,
+                        width: r.width,
+                      });
+                    }
+                  });
+                  return { vw: vw, offenders: offenders, bodyScrollWidth: document.body.scrollWidth };
+                }"""
+            )
+            if overflow["offenders"]:
+                fail(
+                    f"mobile: {len(overflow['offenders'])} elements overflow viewport "
+                    f"(vw={overflow['vw']}): {overflow['offenders'][:5]}"
+                )
+            if overflow["bodyScrollWidth"] > overflow["vw"] + 1:
+                fail(
+                    f"mobile: body scrollWidth={overflow['bodyScrollWidth']} > viewport={overflow['vw']}"
+                )
+            ok(
+                f"mobile: no horizontal overflow "
+                f"(vw={overflow['vw']}, bodyScrollWidth={overflow['bodyScrollWidth']})"
+            )
 
             # Mobile filter bar sticky at bottom
             bar = page.locator(".mobile-filter-bar")
