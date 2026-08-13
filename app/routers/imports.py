@@ -5,8 +5,9 @@ CSV / Excel format — one row per part, pallet_no repeats within a group:
     pallet_no, product_name?, sku, qty, part_code, part_name?, part_qty
 
 Rules:
-- Rows with the same pallet_no + SKU form ONE defective_item.  A pallet may
-  contain several SKUs; each SKU must remain independently repairable.
+- Every source row forms ONE defective_item. Even when pallet_no, SKU and
+  part_code are identical, rows remain separate repair tickets.
+- Multiple part codes written in one source cell remain parts of that row.
 - Empty/whitespace pallet_no row is skipped.
 - The header row (first row) is auto-detected by checking for known column
   names; if detected, the rest of the file is treated as data. If no header
@@ -195,10 +196,15 @@ def _parse_multi_part_cell(cell: str):
 
 
 def _group_tickets(rows):
-    """Group rows by (business date, pallet_no, SKU)."""
+    """Group expanded part records by their original source row.
+
+    A source row is a physical defective item and must never be merged with
+    another row merely because its pallet, SKU or part code matches.
+    """
     groups = defaultdict(list)
-    for r in rows:
-        groups[(r.get("business_date"), r.get("pallet_no") or "", r.get("sku") or "")].append(r)
+    for index, r in enumerate(rows):
+        source_row = r.get("_line", index)
+        groups[(source_row, r.get("business_date"), r.get("pallet_no") or "", r.get("sku") or "")].append(r)
     return groups
 
 
@@ -373,10 +379,11 @@ async def _upload_defectives_impl(
     if not parsed:
         raise HTTPException(400, f"no usable rows parsed. failures: {parse_failures[:5]}")
 
-    # Group by pallet_no, validate each has at least one valid row.
+    # Group only the parts expanded from the same source row. Identical rows
+    # deliberately remain separate defective tickets.
     groups = _group_tickets(parsed)
     tickets = {}
-    for (business_date, pallet, grouped_sku), items in groups.items():
+    for (source_row, business_date, pallet, grouped_sku), items in groups.items():
         sku = items[0]["sku"]
         product_name = items[0]["product_name"]
         qty = items[0]["qty"]
@@ -386,7 +393,7 @@ async def _upload_defectives_impl(
             "part_name": it["part_name"],
             "qty": it["part_qty"],
         } for it in items]
-        tickets[(business_date, pallet, grouped_sku)] = {
+        tickets[(source_row, business_date, pallet, grouped_sku)] = {
             "sku": sku,
             "product_name": product_name,
             "qty": qty,
@@ -399,7 +406,7 @@ async def _upload_defectives_impl(
     failures = []
 
     async with pool().acquire() as conn:
-        for (business_date, pallet, _grouped_sku), t in tickets.items():
+        for (_source_row, business_date, pallet, _grouped_sku), t in tickets.items():
             if not t["sku"]:
                 failures.append({"pallet": pallet, "error": "missing sku"})
                 continue
