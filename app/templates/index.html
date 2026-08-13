@@ -120,6 +120,11 @@
     .def-table .row-READY { background: rgba(220, 252, 231, .18); }
     .def-table .row-COMPLETED td { color: var(--fg-3); }
     .def-table tr:hover { background: rgba(99, 102, 241, .06); }
+    .def-table .column-filters th { padding: .3rem; background: #fff; }
+    .def-table .column-filters input {
+      box-sizing: border-box; width: 100%; min-width: 4.5rem; padding: .3rem .4rem;
+      border: 1px solid var(--line); border-radius: .3rem; font-size: .72rem; font-weight: 400;
+    }
     th, td { padding: .5rem; text-align: left; }
     th { font-size: .75rem; color: var(--fg-3); border-bottom: 1px solid var(--line); }
     tbody tr { border-bottom: 1px solid var(--line); }
@@ -433,21 +438,16 @@
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='ready' ? 'background:#dcfce7;color:#166534;' : ''">🟢 <a href="#" @click.prevent="tab='ready';loadList('READY')" style="text-decoration:none;color:inherit;">READY</a></span>
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='pending' ? 'background:#fee2e2;color:#991b1b;' : ''">🔴 <a href="#" @click.prevent="tab='pending';loadList('PENDING')" style="text-decoration:none;color:inherit;">PENDING</a></span>
           <span style="font-size:.75rem; padding:.15rem .5rem; border-radius:.25rem;" :style="tab==='history' ? 'background:#f1f5f9;color:#475569;' : ''">📜 <a href="#" @click.prevent="tab='history';loadList('COMPLETED')" style="text-decoration:none;color:inherit;">COMPLETED</a></span>
-          <div x-show="['ready','pending'].includes(tab)" style="display:flex; gap:.35rem; align-items:center; flex:1; max-width:28rem;">
-            <input x-model="listSearch" @input.debounce.300ms="searchList()" @keydown.escape="listSearch='';searchList()"
-                   type="search" placeholder="搜索 Pallet / SKU / 商品 / 仓位 / 配件编码"
-                   style="width:100%; padding:.4rem .65rem; border:1px solid var(--line); border-radius:.35rem;" />
-            <button x-show="listSearch" class="btn" @click="listSearch='';searchList()">清除</button>
-          </div>
           <span style="margin-left:auto;">
+            <button x-show="['ready','pending'].includes(tab) && hasColumnFilters" class="btn" @click="clearColumnFilters()">清除筛选</button>
             <button class="btn" @click="toggleSelectAll()">全选 / 反选</button>
           </span>
         </div>
 
-        <table class="def-table" x-show="items.length > 0">
+        <table class="def-table" x-show="filteredItems.length > 0">
           <thead>
             <tr>
-              <th style="width:2rem;"><input type="checkbox" :checked="items.length>0 && items.every(it=>selectedIds.has(it.id))" @change="toggleSelectAll()" /></th>
+              <th style="width:2rem;"><input type="checkbox" :checked="filteredItems.length>0 && filteredItems.every(it=>selectedIds.has(it.id))" @change="toggleSelectAll()" /></th>
               <th>Date</th>
               <th>Pallet</th>
               <th>Location</th>
@@ -458,6 +458,20 @@
               <th style="text-align:right;">Qty</th>
               <th style="text-align:right;">On Hand</th>
               <th style="text-align:right;">Short</th>
+              <th></th>
+            </tr>
+            <tr x-show="['ready','pending'].includes(tab)" class="column-filters">
+              <th></th>
+              <th><input x-model="columnFilters.date" placeholder="Date" /></th>
+              <th><input x-model="columnFilters.pallet" placeholder="Pallet" /></th>
+              <th><input x-model="columnFilters.location" placeholder="Location" /></th>
+              <th><input x-model="columnFilters.product" placeholder="Product" /></th>
+              <th><input x-model="columnFilters.sku" placeholder="SKU" /></th>
+              <th><input x-model="columnFilters.partCode" placeholder="Part Code" /></th>
+              <th><input x-model="columnFilters.partName" placeholder="Part Name" /></th>
+              <th><input x-model="columnFilters.qty" placeholder="Qty" /></th>
+              <th><input x-model="columnFilters.onHand" placeholder="Stock" /></th>
+              <th><input x-model="columnFilters.short" placeholder="Short" /></th>
               <th></th>
             </tr>
           </thead>
@@ -486,7 +500,7 @@
             </template>
           </tbody>
         </table>
-        <div x-show="items.length===0" class="empty-state">暂无数据</div>
+        <div x-show="filteredItems.length===0" class="empty-state" x-text="hasColumnFilters ? '没有符合筛选条件的数据' : '暂无数据'"></div>
       </div>
 
       <!-- INVENTORY TAB -->
@@ -767,13 +781,34 @@ function app() {
     tab: 'create',
     counts: { PENDING: 0, READY: 0, COMPLETED: 0 },
     items: [],
-    listSearch: '',
     listStatus: '',
+    columnFilters: { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', qty: '', onHand: '', short: '' },
+    get hasColumnFilters() {
+      return Object.values(this.columnFilters).some(v => String(v || '').trim());
+    },
+    get filteredItems() {
+      const f = Object.fromEntries(Object.entries(this.columnFilters).map(([k, v]) => [k, String(v || '').trim().toLowerCase()]));
+      if (!Object.values(f).some(Boolean)) return this.items || [];
+      const includes = (value, query) => !query || String(value ?? '').toLowerCase().includes(query);
+      return (this.items || []).filter(it => {
+        const parts = (it.parts && it.parts.length) ? it.parts : [];
+        return includes(it.business_date || (it.created_at || '').slice(0, 10), f.date)
+          && includes(it.pallet_no, f.pallet)
+          && includes(it.location, f.location)
+          && includes(it.product_name, f.product)
+          && includes(it.sku, f.sku)
+          && (!f.partCode || parts.some(p => includes(p.part_code, f.partCode)))
+          && (!f.partName || parts.some(p => includes(p.part_name, f.partName)))
+          && (!f.qty || parts.some(p => includes(p.need, f.qty)))
+          && (!f.onHand || parts.some(p => includes(p.have, f.onHand)))
+          && (!f.short || parts.some(p => includes(p.short, f.short)));
+      });
+    },
     get expandedRows() {
       // Flatten items × parts into one row per part for the table view.
       // ticket-info columns are shown only on the first row (pi === 0).
       const out = [];
-      for (const it of (this.items || [])) {
+      for (const it of this.filteredItems) {
         const parts = (it.parts && it.parts.length)
           ? it.parts
           : [{ part_code: '—', part_name: '', need: it.qty, have: 0, short: 0 }];
@@ -943,20 +978,14 @@ function app() {
     async loadList(status) {
       if (!this.user) return;
       this.listStatus = status;
-      if (status === 'COMPLETED') this.listSearch = '';
       try {
-        const q = this.listSearch.trim();
-        const endpoint = q && status !== 'COMPLETED'
-          ? '/api/defectives/filter?status=' + status + '&q=' + encodeURIComponent(q) + '&limit=500'
-          : '/api/defectives?status=' + status + '&limit=200';
-        this.items = await this.api(endpoint);
+        this.items = await this.api('/api/defectives?status=' + status + '&limit=200');
       } catch (e) {}
     },
 
-    async searchList() {
-      if (!['READY', 'PENDING'].includes(this.listStatus)) return;
+    clearColumnFilters() {
+      this.columnFilters = { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', qty: '', onHand: '', short: '' };
       this.clearSelection();
-      await this.loadList(this.listStatus);
     },
 
     async loadSummary() {
@@ -1321,7 +1350,7 @@ function app() {
     },
 
     toggleSelectAll() {
-      const ids = (this.items || []).map(x => x.id);
+      const ids = this.filteredItems.map(x => x.id);
       const allSelected = ids.length > 0 && ids.every(i => this.selectedIds.has(i));
       if (allSelected) {
         this.clearSelection();
