@@ -1162,6 +1162,36 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: .82rem; color: var(--fg); padding: 0 .25rem;
     }
+
+    /* Mobile (≤720px): stack the meta line above the controls so the
+       buttons / page-size dropdown stay readable on narrow screens and
+       the tap targets stay 2.4rem tall (matches .mobile-filter-bar). */
+    @media (max-width: 720px) {
+      .pager {
+        flex-direction: column;
+        align-items: stretch;
+        gap: .65rem;
+      }
+      .pager .pager-meta {
+        justify-content: center;
+        text-align: center;
+      }
+      .pager .pager-controls {
+        margin-left: 0;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: .35rem;
+      }
+      .pager .pager-btn,
+      .pager select.pager-size {
+        min-height: 2.4rem;
+        padding: .45rem .8rem;
+        font-size: .9rem;
+      }
+      /* On mobile the pager sits above the fixed bottom filter bar, so
+         leave room for it (mobile-filter-bar height + safe-bottom). */
+      .pager { margin-bottom: calc(var(--mobile-bar-height) + var(--safe-bottom) + .5rem); }
+    }
   </style>
 </head>
 <body>
