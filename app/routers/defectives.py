@@ -82,7 +82,7 @@ async def create_defective(
 @router.get("")
 async def list_defectives(
     status: Optional[str] = Query(None, pattern="^(PENDING|READY|COMPLETED)$"),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(100, ge=1, le=10000),
     user: dict = Depends(current_user),
 ):
     return await list_with_parts(status_filter=status, limit=limit)

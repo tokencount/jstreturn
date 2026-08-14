@@ -2334,7 +2334,7 @@ function app() {
     async loadCounts() {
       if (!this.user) return;
       try {
-        const all = await this.api('/api/defectives?limit=500');
+        const all = await this.api('/api/defectives?limit=10000');
         const c = { PENDING: 0, READY: 0, COMPLETED: 0 };
         for (const it of all) c[it.status] = (c[it.status] || 0) + 1;
         this.counts = c;
@@ -2357,7 +2357,7 @@ function app() {
         return;
       }
       try {
-        this.items = await this.api('/api/defectives?status=' + status + '&limit=200');
+        this.items = await this.api('/api/defectives?status=' + status + '&limit=10000');
       } catch (e) {}
     },
 
