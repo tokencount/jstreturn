@@ -403,5 +403,168 @@ class AdminDeleteAccountTests(unittest.TestCase):
         self.assertIn("cannot deactivate the last admin", source)
 
 
+# ---------------------------------------------------------------------------
+# 2026-08-14 follow-up: per-part 仓位 column lives beside Part Code, raw value
+# (no source prefix like "66:HS168-第3仓:"), multi-location preserved.
+# ---------------------------------------------------------------------------
+
+
+def _slice_html(html: str, start: str, end: str) -> str:
+    """Return the substring between two anchor markers (or empty if missing)."""
+    s = html.find(start)
+    if s < 0:
+        return ""
+    e = html.find(end, s + len(start))
+    if e < 0:
+        return ""
+    return html[s:e]
+
+
+class LocationColumnDesktopTests(unittest.TestCase):
+    """The READY/PENDING desktop workbench must have a dedicated 仓位 column
+    to the right of Part Code, and the location chips must no longer live
+    inside the Part Code cell."""
+
+    def test_part_loc_column_header_present(self):
+        # The header just to the right of Part Code must be the new column.
+        self.assertRegex(
+            HTML,
+            r'<th class="col-part-code">Part Code</th>\s*'
+            r'<th class="col-part-loc">仓位</th>',
+        )
+
+    def test_part_loc_filter_input_present(self):
+        # Column-filter input row also gets the new filter.
+        self.assertIn('placeholder="仓位"', HTML)
+        self.assertIn("columnFilters.partLoc", HTML)
+
+    def test_part_loc_filter_state_initialised(self):
+        # The reactive initial state and the reset must include partLoc.
+        self.assertIn("partLoc: ''", HTML)
+
+    def test_part_loc_filter_predicate_uses_inventory_locations(self):
+        # The filter must consult inventory_locations[].location — not
+        # synthesize a string with a source prefix.
+        self.assertRegex(
+            HTML,
+            r"!\s*f\.partLoc\s*\|\|\s*"
+            r"parts\.some\(\s*p\s*=>\s*"
+            r"\(p\.inventory_locations\s*\|\|\s*\[\]\)\.some\(\s*l\s*=>\s*"
+            r"includes\(\s*l\.location",
+        )
+
+    def test_part_code_cell_no_longer_holds_inventory_chips(self):
+        # Inside the desktop workbench tbody, the Part Code cell must
+        # contain ONLY the pc-code span, never the pc-locs chip cluster.
+        workbench = _slice_html(HTML, '<table class="workbench"', "</table>")
+        self.assertTrue(workbench, "workbench table not found")
+        # Locate each row, then assert each Part Code <td> with col-id
+        # containing pc-row contains no pc-locs.
+        row_re = re.compile(
+            r"<td class=\"col-id\">\s*<div class=\"pc-row\">.*?</td>",
+            re.DOTALL,
+        )
+        part_code_cells = row_re.findall(workbench)
+        self.assertTrue(part_code_cells, "no Part Code cells found in workbench")
+        for cell in part_code_cells:
+            self.assertNotIn(
+                "pc-locs", cell,
+                "pc-locs should no longer be rendered inside Part Code cells",
+            )
+            self.assertNotIn(
+                "pc-loc-chip", cell,
+                "pc-loc-chip should no longer be rendered inside Part Code cells",
+            )
+
+    def test_part_loc_cell_renders_chips_outside_part_code(self):
+        workbench = _slice_html(HTML, '<table class="workbench"', "</table>")
+        self.assertTrue(workbench, "workbench table not found")
+        # The dedicated col-part-loc cell exists and renders the chips.
+        cell_re = re.compile(
+            r'<td class="col-part-loc">.*?</td>',
+            re.DOTALL,
+        )
+        cells = cell_re.findall(workbench)
+        self.assertTrue(cells, "no col-part-loc cells found")
+        joined = "\n".join(cells)
+        self.assertIn("pc-loc-chip", joined)
+        # And the part-code cells immediately preceding it should NOT.
+        for cell in cells:
+            self.assertNotIn("col-part-code", cell)
+            self.assertNotIn("pc-code", cell)
+
+    def test_part_loc_cell_dash_fallback_present(self):
+        workbench = _slice_html(HTML, '<table class="workbench"', "</table>")
+        # Empty inventory_locations → render an em-dash placeholder.
+        self.assertRegex(
+            workbench,
+            r"x-show=\"!\(row\.p\.inventory_locations && row\.p\.inventory_locations\.length\)\"",
+        )
+        self.assertRegex(workbench, r">—</span>")
+
+    def test_no_source_prefix_construction_anywhere(self):
+        """Guard rail: nothing in the template should ever compose a
+        ``66:HS168-第3仓:``-style prefix. If the back-end data is raw
+        (which ``app.routers.inventory`` already guarantees), the front
+        end has nothing to add."""
+        # Look for any literal that hard-codes an account/warehouse
+        # prefix joined to the location text.
+        bad_patterns = [
+            r"66:HS168",
+            r"88:HS168",
+            r"99:HS168",
+            r"66:第3仓",
+            r"88:第3仓",
+            r"99:第3仓",
+            r"loc\.location\s*\+\s*['\"]\s*:",   # concatenation with separator
+            r"location\s*\+\s*['\"]:\s*['\"]",   # any "location + ':' + ..."
+        ]
+        for pat in bad_patterns:
+            self.assertNotRegex(
+                HTML, pat,
+                f"template should not compose location prefix; found {pat!r}",
+            )
+
+    def test_col_part_loc_css_width_present(self):
+        self.assertIn(".col-part-loc", HTML)
+        # Width declaration exists so the new column has a sensible layout.
+        self.assertRegex(HTML, r"\.col-part-loc\s*\{[^}]*width:\s*\d")
+
+
+class LocationMobileCardTests(unittest.TestCase):
+    """The mobile parts cell must keep the per-location breakdown but show
+    it under a small 仓位 label so the location is unambiguously the
+    location — not a chip floating beneath an unmarked part code."""
+
+    def test_mobile_parts_cell_has_loc_label_and_chips(self):
+        mobile = _slice_html(
+            HTML, 'class="mobile-list"', "<!-- Mobile sticky bottom filter bar",
+        )
+        self.assertTrue(mobile, "mobile-list slice not found")
+        # The 仓位 label appears inside the parts cell so the chips are
+        # clearly labelled rather than visually ambiguous.
+        self.assertIn('class="pc-loc-lbl"', mobile)
+        self.assertRegex(mobile, r">\s*仓位\s*</span>")
+        # The chips still iterate over inventory_locations so multi-location
+        # data is preserved.
+        self.assertIn("p.inventory_locations", mobile)
+        self.assertIn("pc-loc-chip", mobile)
+
+
+class LocationRepairViewTests(unittest.TestCase):
+    """The simplified repair view must keep the per-part location detail
+    visually labelled so the chips are not confused for part-code badges."""
+
+    def test_repair_view_has_loc_label_and_chips(self):
+        repair = _slice_html(
+            HTML, "<!-- REPAIR SIMPLIFIED VIEW (P3) -->", "<!-- INVENTORY TAB -->",
+        )
+        self.assertTrue(repair, "repair view slice not found")
+        self.assertIn('class="pc-loc-lbl"', repair)
+        self.assertRegex(repair, r">\s*仓位\s*</span>")
+        self.assertIn("p.inventory_locations", repair)
+        self.assertIn("pc-loc-chip", repair)
+
+
 if __name__ == "__main__":
     unittest.main()

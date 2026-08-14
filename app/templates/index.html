@@ -933,6 +933,9 @@
     .workbench .col-product { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
     .workbench .col-sku { width: 7rem; }
     .workbench .col-part-code { width: 16rem; }
+    .workbench .col-part-loc { width: 9rem; vertical-align: middle; }
+    .workbench .col-part-loc .pc-locs { gap: .25rem; }
+    .workbench .col-part-loc .pc-loc-chip { font-size: .68rem; }
     .workbench .pc-row { display: flex; flex-direction: column; gap: .2rem; align-items: flex-start; }
     .workbench .pc-code {
       font-family: ui-monospace, monospace;
@@ -969,6 +972,13 @@
     }
     .pc-loc-name { font-weight: 600; }
     .pc-loc-qty { font-family: ui-monospace, monospace; opacity: .85; }
+    .pc-loc-lbl {
+      font-size: .66rem;
+      color: var(--fg-3);
+      letter-spacing: .04em;
+      margin-right: .2rem;
+      align-self: center;
+    }
     .workbench tr.row-PENDING td { background: var(--row-pending); }
     .workbench tr.row-READY td { background: var(--row-ready); }
     .workbench tr.row-COMPLETED td { color: var(--fg-3); }
@@ -1487,6 +1497,7 @@
                   <th class="col-product">Product</th>
                   <th class="col-sku"><button class="sort-btn" @click="setSort('sku')">SKU <span class="sort-arrow" x-text="sortKey==='sku' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
                   <th class="col-part-code">Part Code</th>
+                  <th class="col-part-loc">仓位</th>
                   <th>Part Name</th>
                   <th class="col-qty">Need</th>
                   <th class="col-stock" title="当前库存">Stock</th>
@@ -1505,6 +1516,7 @@
                   <th><input x-model="columnFilters.product" placeholder="Product" /></th>
                   <th><input x-model="columnFilters.sku" placeholder="SKU" /></th>
                   <th><input x-model="columnFilters.partCode" placeholder="Part Code" /></th>
+                  <th><input x-model="columnFilters.partLoc" placeholder="仓位" /></th>
                   <th><input x-model="columnFilters.partName" placeholder="Part Name" /></th>
                   <th><input x-model="columnFilters.need" placeholder="Need" /></th>
                   <th><input x-model="columnFilters.stock" placeholder="Stock" /></th>
@@ -1533,18 +1545,21 @@
                     <td class="col-id">
                       <div class="pc-row">
                         <span class="pc-code" :title="row.p.part_code" x-text="row.p.part_code"></span>
-                        <span class="pc-locs"
-                              x-show="row.p.inventory_locations && row.p.inventory_locations.length"
-                              :title="(row.p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
-                          <template x-for="(loc, locIdx) in (row.p.inventory_locations || [])" :key="'ploc-' + row.it.id + '-' + row.p.part_code + '-' + locIdx">
-                            <span class="pc-loc-chip"
-                                  :class="locIdx === 0 ? 'pc-loc-primary' : ''">
-                              <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
-                              <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
-                            </span>
-                          </template>
-                        </span>
                       </div>
+                    </td>
+                    <td class="col-part-loc">
+                      <span class="pc-locs"
+                            x-show="row.p.inventory_locations && row.p.inventory_locations.length"
+                            :title="(row.p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                        <template x-for="(loc, locIdx) in (row.p.inventory_locations || [])" :key="'ploc-' + row.it.id + '-' + row.p.part_code + '-' + locIdx">
+                          <span class="pc-loc-chip"
+                                :class="locIdx === 0 ? 'pc-loc-primary' : ''">
+                            <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
+                            <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
+                          </span>
+                        </template>
+                      </span>
+                      <span x-show="!(row.p.inventory_locations && row.p.inventory_locations.length)" class="col-id" style="color:var(--fg-3);">—</span>
                     </td>
                     <td class="col-part-name" :title="row.p.part_name || ''" x-text="row.p.part_name || '—'"></td>
                     <td class="col-num" x-text="row.p.need"></td>
@@ -1621,6 +1636,7 @@
                           <div class="pc-locs pc-locs-mobile"
                                x-show="p.inventory_locations && p.inventory_locations.length"
                                :title="(p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                            <span class="pc-loc-lbl" x-show="p.inventory_locations && p.inventory_locations.length">仓位</span>
                             <template x-for="(loc, locIdx) in (p.inventory_locations || [])" :key="'mploc-' + it.id + '-' + p.part_code + '-' + locIdx">
                               <span class="pc-loc-chip" :class="locIdx === 0 ? 'pc-loc-primary' : ''">
                                 <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
@@ -1758,6 +1774,7 @@
                       <span class="pc-locs pc-locs-repair"
                             x-show="p.inventory_locations && p.inventory_locations.length"
                             :title="(p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                        <span class="pc-loc-lbl" x-show="p.inventory_locations && p.inventory_locations.length">仓位</span>
                         <template x-for="(loc, locIdx) in (p.inventory_locations || [])" :key="'reploc-' + it.id + '-' + p.part_code + '-' + locIdx">
                           <span class="pc-loc-chip" :class="locIdx === 0 ? 'pc-loc-primary' : ''">
                             <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
@@ -2260,7 +2277,7 @@ function app() {
     listStatus: '',
     sortKey: 'business_date',
     sortDir: 'desc',
-    columnFilters: { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' },
+    columnFilters: { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partLoc: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' },
     showForm: false,
     dragOver: false,
     importPreview: null,
@@ -2363,6 +2380,7 @@ function app() {
           && includes(it.product_name, f.product)
           && includes(it.sku, f.sku)
           && (!f.partCode || parts.some(p => includes(p.part_code, f.partCode)))
+          && (!f.partLoc || parts.some(p => (p.inventory_locations || []).some(l => includes(l.location || '', f.partLoc))))
           && (!f.partName || parts.some(p => includes(p.part_name, f.partName)))
           && (!f.need || parts.some(p => numMatches(p, 'need')))
           && (!f.stock || parts.some(p => numMatches(p, 'stock')))
@@ -2733,7 +2751,7 @@ function app() {
     },
 
     clearColumnFilters() {
-      this.columnFilters = { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' };
+      this.columnFilters = { date: '', pallet: '', location: '', product: '', sku: '', partCode: '', partLoc: '', partName: '', need: '', stock: '', reserved: '', available: '', missing: '', reason: '' };
       this.mobileSearchTerm = '';
       this.clearSelection();
     },
