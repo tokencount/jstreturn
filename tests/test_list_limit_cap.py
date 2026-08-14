@@ -1,10 +1,16 @@
 """List-endpoint limit cap tests.
 
-Pinned behaviour after raising the defective-returns list cap (Cc's
-2026-08-14 commit ``fix: raise defective list cap to 10000``):
+Pinned behaviour of the defective-returns list cap, after the 2026-08-14
+bump from 10,000 to 200,000:
 
-  - GET /api/defectives        : default 100, max 10000 (was 500)
+  - GET /api/defectives        : default 100, max 200_000 (was 10,000)
   - GET /api/defectives/filter : default 500, max 2000  (unchanged)
+
+The 200k ceiling is the bulk-fetch path: a single call can pull the
+whole catalog. The paginated READY/PENDING endpoints
+(``/_/ready`` / ``/_/pending``) keep their own whitelist
+(100/200/500/2000, default 500) — see test_ready_pending_pagination.py
+for those caps.
 
 Import semantics remain uncapped: POST /api/imports/defectives does
 not take a ``limit`` query parameter — only the list cap was raised.
@@ -147,9 +153,10 @@ class ListDefectivesCapTests(unittest.TestCase):
         """
         seen = {}
 
-        async def fake_lwp(status_filter=None, limit=200):
+        async def fake_lwp(status_filter=None, limit=200, offset=0):
             seen["status_filter"] = status_filter
             seen["limit"] = limit
+            seen["offset"] = offset
             return []
 
         patcher = patch.object(defectives_mod, "list_with_parts", side_effect=fake_lwp)
@@ -179,8 +186,21 @@ class ListDefectivesCapTests(unittest.TestCase):
         finally:
             patcher.stop()
 
-    def test_new_cap_10000_accepted(self):
-        """?limit=10000 is the new upper bound."""
+    def test_new_cap_200000_accepted(self):
+        """?limit=200000 is the new upper bound (200k ceiling raise)."""
+        self._set_role()
+        patcher, seen = self._patch_list_with_parts()
+        patcher.start()
+        try:
+            r = self.client.get("/api/defectives?limit=200000")
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(seen.get("limit"), 200000)
+        finally:
+            patcher.stop()
+
+    def test_old_cap_10000_still_accepted(self):
+        """?limit=10000 must still pass (regression guard: previous cap
+        value continues to work)."""
         self._set_role()
         patcher, seen = self._patch_list_with_parts()
         patcher.start()
@@ -194,7 +214,7 @@ class ListDefectivesCapTests(unittest.TestCase):
     def test_one_over_cap_rejected(self):
         """One over the cap must still be a 422 (FastAPI Query gate)."""
         self._set_role()
-        r = self.client.get("/api/defectives?limit=10001")
+        r = self.client.get("/api/defectives?limit=200001")
         self.assertEqual(r.status_code, 422, r.text)
 
     def test_limit_zero_rejected(self):
@@ -204,15 +224,15 @@ class ListDefectivesCapTests(unittest.TestCase):
         self.assertEqual(r.status_code, 422, r.text)
 
     def test_status_filter_with_high_limit(self):
-        """?status=PENDING&limit=10000 is the realistic load scenario."""
+        """?status=PENDING&limit=200000 is the realistic load scenario."""
         self._set_role()
         patcher, seen = self._patch_list_with_parts()
         patcher.start()
         try:
-            r = self.client.get("/api/defectives?status=PENDING&limit=10000")
+            r = self.client.get("/api/defectives?status=PENDING&limit=200000")
             self.assertEqual(r.status_code, 200, r.text)
             self.assertEqual(seen.get("status_filter"), "PENDING")
-            self.assertEqual(seen.get("limit"), 10000)
+            self.assertEqual(seen.get("limit"), 200000)
         finally:
             patcher.stop()
 
@@ -239,17 +259,20 @@ class RouteSignatureCapTests(unittest.TestCase):
                 ge = m.ge
         return ge, le
 
-    def test_list_defectives_default_is_100_le_is_10000(self):
+    def test_list_defectives_default_is_100_le_is_200000(self):
         from app.routers.defectives import list_defectives
         sig = inspect.signature(list_defectives)
         limit = sig.parameters["limit"]
-        # FastAPI stores ``Query(100, ge=1, le=10000)`` — the bare
+        # FastAPI stores ``Query(100, ge=1, le=200_000)`` — the bare
         # default value sits on ``.default`` (here ``100``), and the
         # bounds live in ``.metadata`` as pydantic Ge/Le markers.
+        # The 200k ceiling is the bulk-fetch path; the paginated
+        # READY/PENDING endpoints have their own caps (see
+        # test_ready_pending_pagination.py).
         self.assertEqual(limit.default.default, 100)
         ge, le = self._extract_le_ge(limit.default)
         self.assertEqual(ge, 1)
-        self.assertEqual(le, 10000)
+        self.assertEqual(le, 200_000)
 
     def test_filter_list_default_is_500_le_is_2000(self):
         """``/filter`` cap was NOT touched by the raise — pin its
@@ -293,8 +316,10 @@ class ImportEndpointUncappedTests(unittest.TestCase):
         route's signature is clean. If somebody later adds a row cap
         here, the test will start accepting the param and we want it
         to flip to red."""
-        # No body — we only care about the Query schema.
-        r = self.client.post("/api/imports/defectives?limit=10000")
+        # No body — we only care about the Query schema. The value
+        # is irrelevant: the import endpoint must reject ANY limit
+        # param, regardless of the 200k general-list ceiling.
+        r = self.client.post("/api/imports/defectives?limit=200000")
         # 422 (unknown query param) is the desired outcome.
         self.assertEqual(r.status_code, 422, r.text)
 

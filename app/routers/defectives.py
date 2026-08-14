@@ -10,7 +10,14 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.auth import current_user, require_role
 from app.db import pool
-from app.matcher import evaluate_status, list_with_parts
+from app.matcher import (
+    ALLOWED_PAGE_SIZES,
+    DEFAULT_PAGE_SIZE,
+    count_by_status,
+    evaluate_status,
+    list_with_parts,
+    list_with_parts_paged,
+)
 
 router = APIRouter(prefix="/api/defectives", tags=["defectives"])
 
@@ -82,10 +89,35 @@ async def create_defective(
 @router.get("")
 async def list_defectives(
     status: Optional[str] = Query(None, pattern="^(PENDING|READY|COMPLETED)$"),
-    limit: int = Query(100, ge=1, le=10000),
+    limit: int = Query(100, ge=1, le=200_000),
+    offset: int = Query(0, ge=0, le=10_000_000),
     user: dict = Depends(current_user),
 ):
-    return await list_with_parts(status_filter=status, limit=limit)
+    """List defective items.
+
+    Pagination: server-side ``limit`` + ``offset`` with a stable
+    ORDER BY (created_at DESC, id DESC). The response is the bare
+    list for backwards-compat — consumers that need accurate totals
+    should call ``/_/ready`` or ``/_/pending`` (which return
+    ``{items, total, limit, offset}``), or call ``/_/count`` for a
+    fast standalone COUNT.
+
+    Cap behaviour (updated 2026-08-14 scope bump): the general list
+    ceiling is raised to ``200_000`` so a single bulk-export-style
+    call can pull the whole catalog. The paginated READY/PENDING
+    endpoints live at ``/_/ready`` and ``/_/pending`` with their own
+    whitelist-driven defaults (100/200/500/2000, default 500) and are
+    NOT affected by this ceiling — those are user-facing paged views,
+    while this endpoint is the bulk-fetch path.
+
+    Note: the response is the JSON-serialised list returned to the
+    caller. With ``limit=200_000`` the response payload can be large;
+    the SQL itself still applies ``LIMIT/OFFSET`` so the database only
+    ships the requested slice. Accurate totals are soley available
+    via ``/_/count`` (true ``COUNT(*)``) — never derived from a
+    200k-row page.
+    """
+    return await list_with_parts(status_filter=status, limit=limit, offset=offset)
 
 
 @router.get("/{defective_id}")
@@ -285,13 +317,82 @@ async def complete(
 
 
 @router.get("/_/ready")
-async def list_ready(user: dict = Depends(current_user)):
-    return await list_with_parts(status_filter="READY")
+async def list_ready(
+    page_size: int = Query(
+        DEFAULT_PAGE_SIZE,
+        ge=1,
+        le=max(ALLOWED_PAGE_SIZES),
+        description=(
+            "Page size for the READY tab. Must be one of: 100, 200, 500, 2000. "
+            "Default 500. The READY and PENDING tabs maintain independent "
+            "pagination state, so a smaller/larger page size on READY does "
+            "not affect PENDING."
+        ),
+    ),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    user: dict = Depends(current_user),
+):
+    """Paginated READY tab listing with accurate total.
+
+    Response shape: ``{items: [...], total: int, limit: int, offset: int}``.
+    ``total`` is a fresh COUNT(*) against ``defective_items WHERE status='READY'``
+    — independent of the page slice so the UI can render accurate
+    ``X / Y`` counts and ``page N of M`` indicators.
+    """
+    if page_size not in ALLOWED_PAGE_SIZES:
+        raise HTTPException(
+            422,
+            f"page_size must be one of {sorted(ALLOWED_PAGE_SIZES)}; got {page_size}",
+        )
+    return await list_with_parts_paged("READY", page_size, offset)
 
 
 @router.get("/_/pending")
-async def list_pending(user: dict = Depends(current_user)):
-    return await list_with_parts(status_filter="PENDING")
+async def list_pending(
+    page_size: int = Query(
+        DEFAULT_PAGE_SIZE,
+        ge=1,
+        le=max(ALLOWED_PAGE_SIZES),
+        description=(
+            "Page size for the PENDING tab. Must be one of: 100, 200, 500, 2000. "
+            "Default 500. Independent from the READY tab."
+        ),
+    ),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    user: dict = Depends(current_user),
+):
+    """Paginated PENDING tab listing with accurate total.
+
+    Same response shape as ``/_/ready``. The two tabs hold independent
+    pagination state in the front-end — switching to READY and back to
+    PENDING restores the user's last seen page on each tab.
+    """
+    if page_size not in ALLOWED_PAGE_SIZES:
+        raise HTTPException(
+            422,
+            f"page_size must be one of {sorted(ALLOWED_PAGE_SIZES)}; got {page_size}",
+        )
+    return await list_with_parts_paged("PENDING", page_size, offset)
+
+
+@router.get("/_/count")
+async def list_count(
+    status: Optional[str] = Query(None, pattern="^(PENDING|READY|COMPLETED)$"),
+    user: dict = Depends(current_user),
+):
+    """Accurate count for one (or all) defective-item statuses.
+
+    Used by the front-end tab badges so the displayed counts reflect
+    the entire database, not just the items currently on the page.
+    Pass ``?status=PENDING`` (or READY / COMPLETED) to scope the count;
+    omit the param to get a dict of all three. The implementation runs
+    a single COUNT(*) per status — cheap and stable across pagination.
+    """
+    if status is not None:
+        n = await count_by_status(status)
+        return {"status": status, "total": n}
+    out = {s: await count_by_status(s) for s in ("PENDING", "READY", "COMPLETED")}
+    return {"status": None, "totals": out}
 
 
 @router.post("/bulk")

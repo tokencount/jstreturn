@@ -196,7 +196,7 @@ async def evaluate_status(defective_id: int) -> str:
     return status or "PENDING"
 
 
-async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200):
+async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200, offset: int = 0):
     """List defectives, refreshing the global reservation plan first.
 
     For every part on every item we expose:
@@ -210,7 +210,17 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200)
     The reservation plan is computed from the SAME snapshot the matcher used
     to flip statuses, so READY items and their per-part reserved counts stay
     in lock-step.
+
+    Pagination: server-side ``limit`` + ``offset``. The ORDER BY is stable
+    (created_at DESC, id DESC) so consecutive pages do not overlap or skip
+    rows. ``offset`` is supported so callers can implement classic
+    page-of-N pagination with a separate ``count_by_status`` for the total.
+    Note: when ``status_filter`` is ``None`` (cross-status listing) the
+    matcher's reservation plan is NOT rebuilt — only the per-status views
+    flip statuses, so the order-preserving behaviour is unchanged.
     """
+    if offset < 0:
+        raise ValueError("offset must be >= 0")
     plan_index: dict[int, dict[str, dict[str, int]]] = {}
     inventory_map: dict[str, int] = {}
     if status_filter in ("PENDING", "READY"):
@@ -248,13 +258,14 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200)
         {where}
         ORDER BY
             CASE di.status WHEN 'READY' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END,
-            di.created_at DESC
-        LIMIT $1
+            di.created_at DESC,
+            di.id DESC
+        LIMIT $1 OFFSET $2
     """
     where = ""
-    args: list = [limit]
+    args: list = [limit, offset]
     if status_filter:
-        where = "WHERE di.status = $2"
+        where = "WHERE di.status = $3"
         args.append(status_filter)
     async with pool().acquire() as conn:
         rows = await conn.fetch(sql.format(where=where), *args)
@@ -386,3 +397,55 @@ async def summary_counts() -> dict:
     for row in rows:
         out[row["status"]] = row["n"]
     return out
+
+
+# Allowed page sizes for paginated list endpoints. The router pins the
+# default to ``DEFAULT_PAGE_SIZE`` and rejects any other value via the
+# Query validator. Keeping the whitelist centralised lets the front-end
+# stay in sync without re-declaring it.
+ALLOWED_PAGE_SIZES = (100, 200, 500, 2000)
+DEFAULT_PAGE_SIZE = 500
+
+
+async def count_by_status(status: str) -> int:
+    """Return the total number of defective items with the given status.
+
+    Intended for pagination UIs: the count is independent of the current
+    page, so the front-end can show ``page N of M`` / ``X / Y items``
+    without scanning the page itself. The query is a plain ``COUNT(*)``
+    against the same table the list endpoint reads from; no inventory
+    work happens here so the cost is bounded regardless of catalog size.
+    """
+    async with pool().acquire() as conn:
+        n = await conn.fetchval(
+            "SELECT COUNT(*)::int FROM defective_items WHERE status = $1",
+            status,
+        )
+    return int(n or 0)
+
+
+async def list_with_parts_paged(
+    status_filter: Optional[str],
+    limit: int,
+    offset: int,
+) -> dict:
+    """Return ``{items, total}`` for the paginated list endpoint.
+
+    The total is queried once per call (not derived from the page) so it
+    is accurate even when the page slice is partial. Both numbers share
+    the same status filter, so the UI can render accurate ``X / Y`` and
+    ``page N of ceil(Y/limit)`` indicators.
+
+    Note: ordering inside ``list_with_parts`` is deterministic
+    (created_at DESC, id DESC), so consecutive pages do not overlap or
+    skip rows even when rows are inserted between calls.
+    """
+    items = await list_with_parts(status_filter=status_filter, limit=limit, offset=offset)
+    if status_filter is None:
+        # Cross-status listing: total = sum of per-status counts. We keep
+        # the same fallback shape as ``summary_counts`` so the front-end
+        # can use either endpoint.
+        total = sum((await count_by_status(s)) for s in ("PENDING", "READY", "COMPLETED"))
+    else:
+        total = await count_by_status(status_filter)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}

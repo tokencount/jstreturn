@@ -1078,6 +1078,45 @@
     .workbench-summary .label { font-size: 1.1rem; font-weight: 600; margin: 0; }
     .workbench-summary .meta { font-size: .82rem; color: var(--fg-3); margin: .15rem 0 0; }
     .workbench-summary .meta b { color: var(--fg); }
+
+    /* Pagination controls (READY/PENDING tabs).
+       The page-size selector + Prev/Next sit just under the workbench
+       summary. Designed to match the existing .btn / .row gap-xs. */
+    .pager {
+      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      padding: .55rem .75rem; margin-top: .5rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: .65rem;
+    }
+    .pager .pager-meta {
+      font-size: .8rem; color: var(--fg-2);
+      display: flex; gap: .35rem; flex-wrap: wrap; align-items: baseline;
+    }
+    .pager .pager-meta b { color: var(--fg); }
+    .pager .pager-controls {
+      display: flex; gap: .35rem; align-items: center;
+      margin-left: auto;
+    }
+    .pager select.pager-size {
+      padding: .3rem .55rem; border: 1px solid var(--line);
+      border-radius: .4rem; font-size: .82rem; background: #fff;
+    }
+    .pager .pager-btn {
+      padding: .32rem .7rem; border: 1px solid var(--line);
+      border-radius: .4rem; background: #fff; color: var(--fg);
+      cursor: pointer; font-size: .82rem; font-family: inherit;
+    }
+    .pager .pager-btn:disabled {
+      color: var(--fg-3); background: #f8fafc; cursor: not-allowed;
+    }
+    .pager .pager-btn:not(:disabled):hover {
+      background: var(--brand-soft); border-color: #c7d2fe; color: var(--brand);
+    }
+    .pager .pager-page {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .82rem; color: var(--fg); padding: 0 .25rem;
+    }
   </style>
 </head>
 <body>
@@ -1335,19 +1374,51 @@
           <span x-show="bulkResult" style="font-size:.85rem; color:var(--fg-2);" x-text="bulkResult"></span>
         </div>
 
-        <!-- Workbench summary with ticket / part counts -->
+        <!-- Workbench summary with ticket / part counts.
+             Server total (tabTotal) is independent of the current page
+             and of the column filters; tally reflects the current view. -->
         <div class="workbench-summary">
           <div>
             <h2 class="label" x-text="tab==='ready' ? 'READY · 可维修' : (tab==='pending' ? 'PENDING · 等配件' : '历史 · 已维修')"></h2>
             <p class="meta">
-              <b x-text="tally.tickets"></b> 票 ·
-              <b x-text="tally.parts"></b> 个配件
-              <span x-show="hasColumnFilters"> · 已筛选</span>
+              <span x-show="tabTotal !== null">
+                总共 <b x-text="tabTotal"></b> 票
+                <span x-show="hasColumnFilters">（已筛选显示 <b x-text="tally.tickets"></b>）</span>
+              </span>
+              <span x-show="tabTotal === null">
+                <b x-text="tally.tickets"></b> 票 ·
+                <b x-text="tally.parts"></b> 个配件
+                <span x-show="hasColumnFilters"> · 已筛选</span>
+              </span>
             </p>
           </div>
           <div class="row gap-xs">
             <button x-show="['ready','pending'].includes(tab) && hasColumnFilters" class="btn" @click="clearColumnFilters()">清除筛选</button>
             <button class="btn" @click="toggleSelectAll()">全选 / 反选</button>
+          </div>
+        </div>
+
+        <!-- Pagination controls (READY/PENDING). Each tab keeps its own
+             page index + page size so switching tabs preserves state. -->
+        <div class="pager" x-show="['ready','pending'].includes(tab)">
+          <span class="pager-meta">
+            <span x-show="pagerLoading">加载中…</span>
+            <span x-show="!pagerLoading && tabTotal !== null">
+              第 <b x-text="currentPage"></b> / <b x-text="totalPageCount"></b> 页 ·
+              每页 <b x-text="currentPageSize"></b>
+            </span>
+          </span>
+          <div class="pager-controls">
+            <select class="pager-size" @change="onPageSizeChange($event.target.value)" :value="currentPageSize">
+              <template x-for="opt in allowedPageSizes" :key="opt">
+                <option :value="opt" x-text="opt"></option>
+              </template>
+            </select>
+            <button class="pager-btn" @click="gotoFirstPage()" :disabled="!canPrevPage">« 首页</button>
+            <button class="pager-btn" @click="gotoPrevPage()" :disabled="!canPrevPage">‹ 上一页</button>
+            <span class="pager-page" x-text="currentPage + ' / ' + totalPageCount"></span>
+            <button class="pager-btn" @click="gotoNextPage()" :disabled="!canNextPage">下一页 ›</button>
+            <button class="pager-btn" @click="gotoLastPage()" :disabled="!canNextPage">末页 »</button>
           </div>
         </div>
 
@@ -2082,6 +2153,65 @@ function app() {
     importErrorReport: null,
     pendingFile: null,
     uploadLastResult: null,
+
+    /* ============================================================
+       Pagination state (READY/PENDING independent)
+       ============================================================
+       Each list tab holds its own page index + page size so switching
+       tabs preserves the user's last seen page. The legacy
+       ``list_with_parts`` route keeps the old behaviour (history /
+       COMPLETED) — those don't paginate.
+
+       Allowed page sizes mirror the backend whitelist
+       (ALLOWED_PAGE_SIZES in app/matcher.py). Default page size is 500.
+       ============================================================ */
+    ALLOWED_PAGE_SIZES: [100, 200, 500, 2000],
+    DEFAULT_PAGE_SIZE: 500,
+    /* Per-tab state. */
+    readyPage: 1,
+    readyPageSize: 500,
+    readyTotal: null,
+    pendingPage: 1,
+    pendingPageSize: 500,
+    pendingTotal: null,
+    historyPage: 1,
+    historyPageSize: 500,
+    historyTotal: null,
+    pagerLoading: false,
+
+    get allowedPageSizes() { return this.ALLOWED_PAGE_SIZES; },
+    get currentPage() {
+      if (this.tab === 'ready') return this.readyPage;
+      if (this.tab === 'pending') return this.pendingPage;
+      if (this.tab === 'history') return this.historyPage;
+      return 1;
+    },
+    get currentPageSize() {
+      if (this.tab === 'ready') return this.readyPageSize;
+      if (this.tab === 'pending') return this.pendingPageSize;
+      if (this.tab === 'history') return this.historyPageSize;
+      return this.DEFAULT_PAGE_SIZE;
+    },
+    get tabTotal() {
+      if (this.tab === 'ready') return this.readyTotal;
+      if (this.tab === 'pending') return this.pendingTotal;
+      if (this.tab === 'history') return this.historyTotal;
+      return null;
+    },
+    get totalPageCount() {
+      const total = Number(this.tabTotal || 0);
+      const size = Number(this.currentPageSize || this.DEFAULT_PAGE_SIZE);
+      if (total <= 0) return 1;
+      return Math.max(1, Math.ceil(total / size));
+    },
+    get canPrevPage() {
+      return this.currentPage > 1 && !this.pagerLoading;
+    },
+    get canNextPage() {
+      return this.currentPage < this.totalPageCount && !this.pagerLoading;
+    },
+    /* Setter so the :value binding on the <select> reads the
+       current tab's page size; @change drives onPageSizeChange. */
     get hasColumnFilters() {
       return Object.values(this.columnFilters).some(v => String(v || '').trim())
         || !!String(this.mobileSearchTerm || '').trim();
@@ -2334,31 +2464,158 @@ function app() {
     async loadCounts() {
       if (!this.user) return;
       try {
-        const all = await this.api('/api/defectives?limit=10000');
+        // Use the dedicated /count endpoint so the tab badges reflect
+        // the ENTIRE database (not just the items currently on the
+        // active page). /count runs a single COUNT(*) per status.
+        const r = await this.api('/api/defectives/_/count');
+        const totals = (r && r.totals) || {};
+        this.counts = {
+          PENDING: Number(totals.PENDING || 0),
+          READY: Number(totals.READY || 0),
+          COMPLETED: Number(totals.COMPLETED || 0),
+        };
+      } catch (e) {
+        // Fallback: best-effort tally from currently-loaded items.
         const c = { PENDING: 0, READY: 0, COMPLETED: 0 };
-        for (const it of all) c[it.status] = (c[it.status] || 0) + 1;
+        for (const it of (this.items || [])) c[it.status] = (c[it.status] || 0) + 1;
         this.counts = c;
-      } catch (e) {}
+      }
     },
 
     async loadList(status) {
+      // Backwards-compatible entry point. Routes to the paginated
+      // loaders for READY / PENDING and keeps the legacy single-shot
+      // fetch for COMPLETED (history tab — unchanged behaviour).
+      // Accepts legacy aliases (HISTORY -> COMPLETED) so callers that
+      // do ``loadList(tab.toUpperCase())`` (history -> HISTORY) still
+      // hit the right endpoint instead of a 422 from the status filter.
       if (!this.user) return;
-      this.listStatus = status;
+      const normalized = status === 'HISTORY' ? 'COMPLETED' : status;
+      this.listStatus = normalized;
       // Dev fixture: ?fixture=1 keeps the mocked items and filters them
       // in-memory by status instead of fetching.
       var _isFixture = (typeof window !== 'undefined') && (new URLSearchParams(window.location.search)).get('fixture') === '1';
       if (_isFixture) {
         if (!Array.isArray(this._fixtureAllItems)) {
-          // First call before the fixture was injected: bootstrap a
-          // default set so the page still renders something useful.
           this._fixtureAllItems = this.items || [];
         }
-        this.items = this._fixtureAllItems.filter(it => it.status === status);
+        this.items = this._fixtureAllItems.filter(it => it.status === normalized);
         return;
       }
+      if (normalized === 'READY') return await this._loadReadyPage();
+      if (normalized === 'PENDING') return await this._loadPendingPage();
+      // COMPLETED (history) keeps the legacy single-shot fetch so the
+      // 2026-08-14 cap behaviour is preserved. The 200k ceiling raise
+      // on the general list endpoint lets the history tab pull the
+      // full archive in one shot (still backed by COUNT(*) for the
+      // tab badge via /_/count — totals are never inferred from the
+      // size of the page slice).
       try {
-        this.items = await this.api('/api/defectives?status=' + status + '&limit=10000');
+        this.items = await this.api('/api/defectives?status=COMPLETED&limit=200000');
+        // Track approximate total locally; the tab badge (loadCounts)
+        // remains the source of truth for accurate counts.
+        this.historyTotal = (this.items || []).length;
       } catch (e) {}
+    },
+
+    /* ----- internal: per-tab paginated loaders ----- */
+    async _loadReadyPage() {
+      this.pagerLoading = true;
+      try {
+        const size = this.readyPageSize;
+        const offset = (this.readyPage - 1) * size;
+        const r = await this.api('/api/defectives/_/ready?page_size=' + size + '&offset=' + offset);
+        this.items = (r && r.items) || [];
+        const total = Number((r && r.total) || 0);
+        this.readyTotal = total;
+        // If a concurrent change shrunk the dataset below our current
+        // page, snap back to the last valid page.
+        if (total > 0 && this.readyPage > Math.ceil(total / size)) {
+          this.readyPage = Math.max(1, Math.ceil(total / size));
+          return await this._loadReadyPage();
+        }
+        // Always refresh tab badges alongside the page so the UI is
+        // consistent if the count moved.
+        this.loadCounts();
+      } catch (e) {
+        this.items = [];
+        this.readyTotal = 0;
+      } finally {
+        this.pagerLoading = false;
+      }
+    },
+
+    async _loadPendingPage() {
+      this.pagerLoading = true;
+      try {
+        const size = this.pendingPageSize;
+        const offset = (this.pendingPage - 1) * size;
+        const r = await this.api('/api/defectives/_/pending?page_size=' + size + '&offset=' + offset);
+        this.items = (r && r.items) || [];
+        const total = Number((r && r.total) || 0);
+        this.pendingTotal = total;
+        if (total > 0 && this.pendingPage > Math.ceil(total / size)) {
+          this.pendingPage = Math.max(1, Math.ceil(total / size));
+          return await this._loadPendingPage();
+        }
+        this.loadCounts();
+      } catch (e) {
+        this.items = [];
+        this.pendingTotal = 0;
+      } finally {
+        this.pagerLoading = false;
+      }
+    },
+
+    /* ----- pager actions (wired to the Prev/Next controls) ----- */
+    async gotoPrevPage() {
+      if (!this.canPrevPage) return;
+      if (this.tab === 'ready') { this.readyPage -= 1; await this._loadReadyPage(); }
+      else if (this.tab === 'pending') { this.pendingPage -= 1; await this._loadPendingPage(); }
+      else if (this.tab === 'history') {
+        this.historyPage = Math.max(1, this.historyPage - 1);
+        await this.loadList('COMPLETED');
+      }
+    },
+    async gotoNextPage() {
+      if (!this.canNextPage) return;
+      if (this.tab === 'ready') { this.readyPage += 1; await this._loadReadyPage(); }
+      else if (this.tab === 'pending') { this.pendingPage += 1; await this._loadPendingPage(); }
+      else if (this.tab === 'history') {
+        this.historyPage += 1;
+        await this.loadList('COMPLETED');
+      }
+    },
+    async gotoFirstPage() {
+      if (this.tab === 'ready') { this.readyPage = 1; await this._loadReadyPage(); }
+      else if (this.tab === 'pending') { this.pendingPage = 1; await this._loadPendingPage(); }
+      else if (this.tab === 'history') {
+        this.historyPage = 1;
+        await this.loadList('COMPLETED');
+      }
+    },
+    async gotoLastPage() {
+      const last = this.totalPageCount;
+      if (this.tab === 'ready') { this.readyPage = Math.max(1, last); await this._loadReadyPage(); }
+      else if (this.tab === 'pending') { this.pendingPage = Math.max(1, last); await this._loadPendingPage(); }
+      else if (this.tab === 'history') {
+        this.historyPage = Math.max(1, last);
+        await this.loadList('COMPLETED');
+      }
+    },
+    async onPageSizeChange(raw) {
+      // Clamp to the whitelist; the server enforces the same list.
+      const n = parseInt(raw, 10);
+      const size = this.ALLOWED_PAGE_SIZES.includes(n) ? n : this.DEFAULT_PAGE_SIZE;
+      // Reset to page 1 whenever the size changes so the user always
+      // sees the top of the freshly-sized page slice.
+      if (this.tab === 'ready') {
+        if (this.readyPageSize !== size) { this.readyPageSize = size; this.readyPage = 1; await this._loadReadyPage(); }
+      } else if (this.tab === 'pending') {
+        if (this.pendingPageSize !== size) { this.pendingPageSize = size; this.pendingPage = 1; await this._loadPendingPage(); }
+      } else if (this.tab === 'history') {
+        if (this.historyPageSize !== size) { this.historyPageSize = size; this.historyPage = 1; await this.loadList('COMPLETED'); }
+      }
     },
 
     clearColumnFilters() {
