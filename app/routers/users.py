@@ -161,6 +161,9 @@ async def deactivate_user(
     actor: dict = admin_required,
 ):
     """Soft-deactivate a user (admin only). The user cannot log in afterwards."""
+    if user_id == actor["id"]:
+        raise HTTPException(400, "cannot delete your own account")
+
     async with pool().acquire() as conn:
         existing = await conn.fetchrow(
             "SELECT id, role, active, name FROM users WHERE id=$1",
