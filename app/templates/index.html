@@ -1526,10 +1526,10 @@
                   <th>Part Name</th>
                   <th class="col-qty">Need</th>
                   <th class="col-stock" title="当前库存">Stock</th>
-                  <th x-show="tab !== 'ready'" class="col-stock" title="被其它 READY 单占用">Reserved</th>
-                  <th x-show="tab !== 'ready'" class="col-stock" title="stock − reserved">Available</th>
-                  <th x-show="tab !== 'ready'" class="col-short">Missing</th>
-                  <th x-show="tab !== 'ready'">Reason</th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="被其它 READY 单占用">Reserved</th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="stock − reserved">Available</th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-short">Missing</th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'">Reason</th>
                   <th x-show="tab !== 'ready'" class="col-status">Status</th>
                   <th class="col-actions"></th>
                 </tr>
@@ -1545,10 +1545,10 @@
                   <th><input x-model="columnFilters.partName" placeholder="Part Name" /></th>
                   <th><input x-model="columnFilters.need" placeholder="Need" /></th>
                   <th><input x-model="columnFilters.stock" placeholder="Stock" /></th>
-                  <th x-show="tab !== 'ready'"><input x-model="columnFilters.reserved" placeholder="Resv" /></th>
-                  <th x-show="tab !== 'ready'"><input x-model="columnFilters.available" placeholder="Avail" /></th>
-                  <th x-show="tab !== 'ready'"><input x-model="columnFilters.missing" placeholder="Miss" /></th>
-                  <th x-show="tab !== 'ready'"><input x-model="columnFilters.reason" placeholder="Reason" /></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.reserved" placeholder="Resv" /></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.available" placeholder="Avail" /></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.missing" placeholder="Miss" /></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.reason" placeholder="Reason" /></th>
                   <th x-show="tab !== 'ready'"></th>
                   <th></th>
                 </tr>
@@ -1589,10 +1589,10 @@
                     <td class="col-part-name" :title="row.p.part_name || ''" x-text="row.p.part_name || '—'"></td>
                     <td class="col-num" x-text="row.p.need"></td>
                     <td class="col-num" :class="row.p.stock > 0 ? 'col-num-pos' : 'col-num-zero'" x-text="row.p.stock"></td>
-                    <td x-show="tab !== 'ready'" class="col-num" :class="row.p.reserved > 0 ? 'col-num-reserved' : 'col-num-zero'" x-text="row.p.reserved"></td>
-                    <td x-show="tab !== 'ready'" class="col-num" :class="row.p.available >= row.p.need ? 'col-num-pos' : 'col-num-zero'" x-text="row.p.available"></td>
-                    <td x-show="tab !== 'ready'" class="col-num" :class="row.p.missing > 0 ? 'col-num-neg' : 'col-num-zero'" x-text="row.p.missing"></td>
-                    <td x-show="tab !== 'ready'">
+                    <td x-show="tab !== 'ready' && tab !== 'pending'" class="col-num" :class="row.p.reserved > 0 ? 'col-num-reserved' : 'col-num-zero'" x-text="row.p.reserved"></td>
+                    <td x-show="tab !== 'ready' && tab !== 'pending'" class="col-num" :class="row.p.available >= row.p.need ? 'col-num-pos' : 'col-num-zero'" x-text="row.p.available"></td>
+                    <td x-show="tab !== 'ready' && tab !== 'pending'" class="col-num" :class="row.p.missing > 0 ? 'col-num-neg' : 'col-num-zero'" x-text="row.p.missing"></td>
+                    <td x-show="tab !== 'ready' && tab !== 'pending'">
                       <span class="reason-tag" :class="{
                           'reason-ok': !row.p.reason || row.p.reason === '已预留' || row.p.reason === '可分配',
                           'reason-reserved': row.p.reason === '已被其它 READY 单占用' || row.p.reason === '部分被占用，库存不足',

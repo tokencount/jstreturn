@@ -200,50 +200,85 @@ class MobilePagerResponsiveTests(unittest.TestCase):
 
 
 class ReadyColumnTests(unittest.TestCase):
-    """Cc's 2026-08-14 spec: on the READY tab only, the diagnostic
-    columns Reserved / Available / Missing / Reason / Status must NOT
-    appear in the desktop table, the mobile card list, or the repair
-    view. They stay visible on PENDING where they help the user
-    understand why a part is short."""
+    """Cc's 2026-08-14 spec, refined in the same-day follow-up:
+
+      * On the READY tab the 5 diagnostic columns (Reserved, Available,
+        Missing, Reason, Status) must NOT appear in the desktop table,
+        mobile card list, or repair view.
+      * On the PENDING tab the 4 numeric diagnostic columns (Reserved,
+        Available, Missing, Reason) must ALSO be hidden — only the
+        Status column remains visible there so the user knows the
+        ticket is waiting.
+      * The HISTORY tab (Cc did not address it explicitly) preserves
+        the prior behaviour: all 5 columns are visible for full
+        forensic context.
+
+    Summary of the gating expressions:
+
+      * Reserved / Available / Missing / Reason  → hidden on READY
+                                                  AND on PENDING.
+                                                  Visible on HISTORY.
+        x-show = "tab !== 'ready' && tab !== 'pending'"
+      * Status                                  → hidden on READY only.
+                                                  Visible on PENDING
+                                                  AND HISTORY.
+        x-show = "tab !== 'ready'"
+    """
+
+    DIAG_EXPR = "tab !== 'ready' && tab !== 'pending'"
+    STATUS_EXPR = "tab !== 'ready'"
 
     # -- Header row ----------------------------------------------------
 
     def test_ready_hides_diagnostic_headers(self):
-        for label in ("Reserved", "Available", "Missing", "Reason", "Status"):
+        # The 4 numeric diagnostic headers use the strict
+        # ``tab !== 'ready' && tab !== 'pending'`` gate so they vanish
+        # on READY AND PENDING.
+        for label in ("Reserved", "Available", "Missing", "Reason"):
             self.assertRegex(
                 HTML,
-                rf'<th[^>]*x-show="tab !== \'ready\'"[^>]*>[^<]*{label}',
+                rf'<th[^>]*x-show="{self.DIAG_EXPR}"[^>]*>[^<]*{label}',
+                f"diagnostic header {label!r} must be gated by {self.DIAG_EXPR!r}",
             )
+        # Status header keeps the relaxed single-tab gate.
+        self.assertRegex(
+            HTML,
+            rf'<th[^>]*x-show="{self.STATUS_EXPR}"[^>]*>[^<]*Status',
+        )
 
     # -- Filter row ----------------------------------------------------
 
     def test_ready_hides_diagnostic_filter_inputs(self):
         """The column-filter <input>s that live in the second header row
-        must also be gated — leaving them visible on READY would leave
-        a non-functional text box whose placeholder is meaningless."""
+        must also be gated — leaving them visible on READY or PENDING
+        would leave a non-functional text box whose placeholder is
+        meaningless."""
         for placeholder in ("Resv", "Avail", "Miss", "Reason"):
             self.assertRegex(
                 HTML,
-                rf'<th[^>]*x-show="tab !== \'ready\'"[^>]*>'
+                rf'<th[^>]*x-show="{self.DIAG_EXPR}"[^>]*>'
                 rf'<input[^>]*placeholder="{placeholder}"',
+                f"filter input for {placeholder!r} must be gated by {self.DIAG_EXPR!r}",
             )
 
     # -- Body cells (desktop) -----------------------------------------
 
     def test_ready_hides_diagnostic_body_cells(self):
         for needle in (
-            'x-show="tab !== \'ready\'" class="col-num" :class="row.p.reserved',
-            'x-show="tab !== \'ready\'" class="col-num" :class="row.p.available',
-            'x-show="tab !== \'ready\'" class="col-num" :class="row.p.missing',
-            'x-show="tab !== \'ready\'">\n                      <span class="reason-tag"',
-            'x-show="tab !== \'ready\'">\n                      <span x-show="row.pi===0" class="status-chip"',
+            f'x-show="{self.DIAG_EXPR}" class="col-num" :class="row.p.reserved',
+            f'x-show="{self.DIAG_EXPR}" class="col-num" :class="row.p.available',
+            f'x-show="{self.DIAG_EXPR}" class="col-num" :class="row.p.missing',
+            f'x-show="{self.DIAG_EXPR}">\n                      <span class="reason-tag"',
+            # Status body cell keeps the relaxed gate (visible on PENDING).
+            f'x-show="{self.STATUS_EXPR}">\n                      <span x-show="row.pi===0" class="status-chip"',
         ):
             self.assertIn(needle, HTML)
 
     def test_ready_hides_status_chip_on_desktop_table(self):
         """The desktop table's status chip lives inside a <td
         x-show="tab !== 'ready'"> parent; verify the surrounding <td>
-        is gated so the chip is not visible on READY."""
+        is gated so the chip is not visible on READY. (Status stays
+        visible on PENDING per the refined spec.)"""
         self.assertRegex(
             HTML,
             r'<td x-show="tab !== \'ready\'">\s*<span x-show="row\.pi===0" class="status-chip"',
@@ -260,23 +295,15 @@ class ReadyColumnTests(unittest.TestCase):
     def test_ready_hides_diagnostic_text_in_mobile_card_meta(self):
         """The mobile card-row-2 / card-meta blocks must not mention
         Reserved / Available / Missing / Reason as standalone labels on
-        READY. They are diagnostic concepts, not useful on the
-        read-only READY list."""
-        # The mobile-card markup does NOT currently label these
-        # diagnostics, but guard against any future drift: if any of
-        # these labels appear inside .card-* they must be gated.
+        READY (or on PENDING per the refined spec). They are diagnostic
+        concepts, not useful on either tab."""
         for label in ("Reserved", "Available", "Missing", "Reason"):
-            # No unconditional display of the label inside mobile cards.
             card_blocks = re.findall(
                 r'<article class="card">(.*?)</article>',
                 HTML,
                 flags=re.DOTALL,
             )
             for block in card_blocks:
-                # The Reason text could conceivably appear inside
-                # p.reason or p.reason-text, so we only fail when the
-                # label is a stand-alone label span (case-sensitive
-                # match, surrounded by markup boundaries).
                 self.assertNotRegex(
                     block,
                     rf'>\s*{label}\s*<',
@@ -309,9 +336,11 @@ class ReadyColumnTests(unittest.TestCase):
     # -- Column-count parity (header ↔ body) --------------------------
 
     def test_header_and_body_have_equal_column_counts_on_ready(self):
-        """On the READY tab, hiding 5 diagnostic columns in both the
-        header and the body must yield a matching column count, so the
-        table cells line up under the correct headers."""
+        """On the READY tab the diagnostic columns (4 numeric fields
+        gated by ``tab !== 'ready' && tab !== 'pending'`` + 1 Status
+        gated by ``tab !== 'ready'``) must be hidden in both the header
+        and the body so the table cells stay aligned under the correct
+        headers."""
         # Pull the FIRST <thead> of the workbench table.
         thead_match = re.search(
             r'<table class="workbench"[^>]*>.*?<thead>(.*?)</thead>',
@@ -321,23 +350,31 @@ class ReadyColumnTests(unittest.TestCase):
         self.assertIsNotNone(thead_match, "workbench <thead> not found")
         thead = thead_match.group(1)
 
-        # The diagnostic column <th>s share the same gating expression;
-        # count the cells visible on READY by counting <th>s WITHOUT the
-        # gating expression in the FIRST <tr> of <thead>.
         first_tr = re.search(r'<tr>(.*?)</tr>', thead, flags=re.DOTALL)
         self.assertIsNotNone(first_tr, "first <tr> in <thead> missing")
         first_tr_html = first_tr.group(1)
 
-        # The header <th>s always include the diagnostic columns;
-        # counting the gated ones tells us how many are removed on READY.
+        # 4 numeric diagnostic headers use the strict 2-tab gate.
         diag_ths = re.findall(
-            r"<th[^>]*x-show=\"tab !== 'ready'\"[^>]*>.*?</th>",
+            r'<th[^>]*x-show="tab !== \'ready\' && tab !== \'pending\'"[^>]*>.*?</th>',
             first_tr_html,
             flags=re.DOTALL,
         )
         self.assertEqual(
-            len(diag_ths), 5,
-            f"expected 5 diagnostic <th>s gated by tab !== 'ready', got {len(diag_ths)}",
+            len(diag_ths), 4,
+            f"expected 4 numeric diagnostic <th>s gated by tab !== 'ready' "
+            f"&& tab !== 'pending', got {len(diag_ths)}",
+        )
+
+        # 1 Status header uses the single-tab gate.
+        status_ths = re.findall(
+            r'<th[^>]*x-show="tab !== \'ready\'"[^>]*>Status</th>',
+            first_tr_html,
+        )
+        self.assertEqual(
+            len(status_ths), 1,
+            f"expected exactly 1 Status <th> gated by tab !== 'ready', "
+            f"got {len(status_ths)}",
         )
 
         # Body: the FIRST <tbody> row in the desktop workbench table.
@@ -347,8 +384,6 @@ class ReadyColumnTests(unittest.TestCase):
             flags=re.DOTALL,
         )
         self.assertIsNotNone(tbody_match, "workbench <tbody> not found")
-        # The workbench <tbody> contains a <template x-for="row in ...">
-        # whose root is the row <tr>. Pull out that first <tr>:
         tr_match = re.search(
             r'<template[^>]*>\s*<tr[^>]*>(.*?)</tr>',
             tbody_match.group(1),
@@ -357,44 +392,95 @@ class ReadyColumnTests(unittest.TestCase):
         self.assertIsNotNone(tr_match, "first <tr> in <tbody> missing")
         first_body_tr = tr_match.group(1)
 
+        # 4 numeric diagnostic <td>s use the strict 2-tab gate.
         diag_tds = re.findall(
-            r"<td[^>]*x-show=\"tab !== 'ready'\"[^>]*>.*?</td>",
+            r'<td[^>]*x-show="tab !== \'ready\' && tab !== \'pending\'"[^>]*>.*?</td>',
             first_body_tr,
             flags=re.DOTALL,
         )
-        # Body has 5 gated cells (reserved, available, missing, reason,
-        # status) — same count as the header.
         self.assertEqual(
-            len(diag_tds), 5,
-            f"expected 5 diagnostic <td>s gated by tab !== 'ready', "
-            f"got {len(diag_tds)}",
+            len(diag_tds), 4,
+            f"expected 4 numeric diagnostic <td>s gated by tab !== 'ready' "
+            f"&& tab !== 'pending', got {len(diag_tds)}",
         )
 
-    # -- PENDING keeps the diagnostic fields --------------------------
+        # 1 Status <td> uses the single-tab gate.
+        status_tds = re.findall(
+            r'<td[^>]*x-show="tab !== \'ready\'"[^>]*>\s*<span x-show="row\.pi===0" class="status-chip"',
+            first_body_tr,
+            flags=re.DOTALL,
+        )
+        self.assertEqual(
+            len(status_tds), 1,
+            f"expected exactly 1 Status <td> gated by tab !== 'ready', "
+            f"got {len(status_tds)}",
+        )
 
-    def test_pending_keeps_diagnostic_fields_visible(self):
-        """The READY-only restriction must not leak to PENDING. We
-        assert this by checking that the gating expression is
-        ``tab !== 'ready'`` (a positive exclude) — not
-        ``tab === 'pending'`` (which would hide the columns on every
-        other tab, including HISTORY)."""
-        # Use the same diagnostic <th> from test_ready_hides_diagnostic_headers
-        # and confirm the expression excludes only 'ready'.
+    # -- HISTORY keeps the diagnostic fields --------------------------
+
+    def test_history_keeps_diagnostic_fields_visible(self):
+        """The READY+PENDING restriction must not leak to HISTORY. The
+        diagnostic gating expression must reference BOTH 'ready' and
+        'pending' (an exclude of both), so HISTORY continues to show
+        every column for forensic completeness."""
         m = re.search(
             r'<th[^>]*x-show="([^"]+)"[^>]*>[^<]*Reserved',
             HTML,
         )
         self.assertIsNotNone(m, "Reserved header <th> not found")
         expr = m.group(1).strip()
-        # Must reference 'ready' and exclude it.
+        # Must reference both 'ready' and 'pending' as exclusions.
         self.assertIn("ready", expr)
-        self.assertNotIn(
-            "pending", expr.lower().replace("ready", ""),
-            "gating expression must not turn into a positive 'pending' filter",
+        self.assertIn("pending", expr)
+        # Must NOT be a positive form (e.g. 'tab === \"history\"') that
+        # would also work but is much less safe.
+        self.assertNotIn("===", expr)
+        # Pin the exact expression so the contract cannot drift.
+        self.assertEqual(expr, self.DIAG_EXPR)
+
+    # -- STATUS column remains visible on PENDING ---------------------
+
+    def test_status_remains_visible_on_pending(self):
+        """The Status <th>/<td>/mobile-chip must NOT exclude PENDING,
+        otherwise the user loses the ability to see that a ticket is
+        waiting. Pin ``tab !== 'ready'`` as the exact gating form."""
+        # Header
+        m = re.search(
+            r'<th[^>]*x-show="([^"]+)"[^>]*>Status</th>',
+            HTML,
         )
-        # The simplest, most stable form is `tab !== 'ready'`. Pin that
-        # to lock the contract.
-        self.assertEqual(expr, "tab !== 'ready'")
+        self.assertIsNotNone(m, "Status header <th> not found")
+        expr = m.group(1).strip()
+        self.assertEqual(
+            expr, self.STATUS_EXPR,
+            f"Status header gate must remain {self.STATUS_EXPR!r}, got {expr!r}",
+        )
+        self.assertNotIn("pending", expr)
+
+        # Body
+        self.assertIn(
+            '<td x-show="tab !== \'ready\'">',
+            HTML,
+        )
+        # And confirm there is NO <td x-show="tab !== 'ready' && tab !== 'pending'">
+        # wrapping a status-chip span (would mean Status got accidentally
+        # upgraded to the strict gate).
+        self.assertNotRegex(
+            HTML,
+            r'<td x-show="tab !== \'ready\' && tab !== \'pending\'">\s*<span x-show="row\.pi===0" class="status-chip"',
+            "Status body cell must NOT use the strict 2-tab gate",
+        )
+
+        # Mobile chip
+        self.assertIn(
+            '<span x-show="tab !== \'ready\'" class="status-chip chip"',
+            HTML,
+        )
+        self.assertNotIn(
+            '<span x-show="tab !== \'ready\' && tab !== \'pending\'" class="status-chip chip"',
+            HTML,
+            "mobile status chip must NOT use the strict 2-tab gate",
+        )
 
 
 class AdminDeleteAccountTests(unittest.TestCase):
