@@ -79,6 +79,43 @@ CREATE TABLE IF NOT EXISTS public.inventory_snapshot (
     updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Inventory locations breakdown (P2 support: multiple warehouse positions per
+-- same part_code). ``inventory_snapshot`` stays the aggregate (one row per
+-- part_code, ``on_hand_qty`` = SUM across all locations). This child table
+-- records the per-(part_code, location, qty) detail that the upload + UI use
+-- to display "哪里有货" beside the part_code.
+--
+-- Backward compat: an empty child table + a populated aggregate row still
+-- behaves identically to the original snapshot. Old single-row uploads that
+-- only fill ``inventory_snapshot.location`` keep working because both
+-- ``inventory/upload`` and the daily-refresh runner will (a) populate the
+-- child table with one row when a CSV carries a single location string and
+-- (b) populate N rows when the CSV carries multiple rows per part_code.
+CREATE TABLE IF NOT EXISTS public.inventory_locations (
+    id          BIGSERIAL PRIMARY KEY,
+    part_code   TEXT NOT NULL,
+    location    TEXT NOT NULL DEFAULT '',
+    qty         INTEGER NOT NULL DEFAULT 0 CHECK (qty >= 0),
+    updated_at  TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (part_code, location)
+);
+CREATE INDEX IF NOT EXISTS idx_invloc_part ON public.inventory_locations (part_code);
+-- Idempotent backfill: if we already have snapshot rows but no location
+-- detail (legacy data), seed one detail row per part_code from the
+-- aggregate's ``location`` + ``on_hand_qty``. DO block so a partial
+-- migration is safe to re-run.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.inventory_locations LIMIT 1
+    ) THEN
+        INSERT INTO public.inventory_locations (part_code, location, qty)
+        SELECT part_code, COALESCE(location, ''), on_hand_qty
+        FROM public.inventory_snapshot
+        ON CONFLICT (part_code, location) DO NOTHING;
+    END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS public.audit_log (
     id           BIGSERIAL PRIMARY KEY,
     user_id      INTEGER REFERENCES public.users(id),

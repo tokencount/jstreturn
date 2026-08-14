@@ -270,6 +270,25 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
     async with pool().acquire() as conn:
         rows = await conn.fetch(sql.format(where=where), *args)
 
+    # Pre-fetch the per-(part_code, location) breakdown for every distinct
+    # part_code that will appear in this page. ``inventory_locations`` may
+    # have multiple rows per part_code (different warehouses); the UI shows
+    # the full list beside the part_code, the matcher still uses the
+    # aggregated ``inventory_snapshot.on_hand_qty`` for reservation math.
+    part_codes: set[str] = set()
+    for row in rows:
+        parts = row.get("parts")
+        if isinstance(parts, str):
+            try:
+                parts = json.loads(parts)
+            except (ValueError, TypeError):
+                parts = []
+        for p in (parts or []):
+            code = (p.get("part_code") or "").strip()
+            if code:
+                part_codes.add(code)
+    locations_by_code: dict[str, list[dict]] = await _fetch_locations_for_codes(part_codes)
+
     out = []
     for row in rows:
         item = dict(row)
@@ -307,6 +326,12 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
             p["missing"] = missing
             p["reason"] = _allocation_reason(item["status"], need, stock, reserved, available, missing)
             p["ready"] = item["status"] == "READY"
+            # Per-(part_code, location) breakdown from the inventory_locations
+            # child table. Empty list is fine — single-location legacy data
+            # is still represented by a single empty-row aggregate in the
+            # snapshot table, and the UI hides the locations sub-list when
+            # there is only one bucket (or none).
+            p["inventory_locations"] = locations_by_code.get(p["part_code"], [])
         out.append(item)
     return out
 
@@ -422,6 +447,40 @@ async def count_by_status(status: str) -> int:
             status,
         )
     return int(n or 0)
+
+
+async def _fetch_locations_for_codes(part_codes: set[str] | list[str]) -> dict[str, list[dict]]:
+    """Return ``{part_code: [{location, qty}, ...]}`` for every part_code.
+
+    The list is ordered by qty DESC then location ASC so the UI can render
+    the largest stock first without needing to sort client-side. Empty /
+    unknown part_codes return an empty list and are omitted from the dict.
+
+    Backward compat: if the legacy schema is in place (no
+    ``inventory_locations`` rows), the result is an empty dict and callers
+    render no location detail. The aggregate ``inventory_snapshot.on_hand_qty``
+    is still the source of truth for reservation math.
+    """
+    codes = [c for c in (part_codes or set()) if c]
+    if not codes:
+        return {}
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT part_code, COALESCE(NULLIF(location, ''), '') AS location, qty::int AS qty
+            FROM inventory_locations
+            WHERE part_code = ANY($1::text[])
+            ORDER BY qty DESC, location ASC
+            """,
+            codes,
+        )
+    out: dict[str, list[dict]] = {}
+    for row in rows:
+        out.setdefault(row["part_code"], []).append({
+            "location": row["location"] or "",
+            "qty": int(row["qty"] or 0),
+        })
+    return out
 
 
 async def list_with_parts_paged(

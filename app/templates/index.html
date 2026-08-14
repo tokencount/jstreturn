@@ -633,6 +633,15 @@
       word-break: break-all;
       flex: 1;
     }
+    .repair-card .rc-part .rc-part-main {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: .35rem;
+      flex: 1;
+      min-width: 0;
+    }
+    .repair-card .rc-part .pc-locs-repair { flex-basis: 100%; }
     .repair-card .rc-part .qty {
       font-weight: 700;
       color: var(--brand);
@@ -923,7 +932,43 @@
     .workbench .col-loc { width: 5rem; }
     .workbench .col-product { max-width: 10rem; overflow: hidden; text-overflow: ellipsis; }
     .workbench .col-sku { width: 7rem; }
-    .workbench .col-part-code { width: 11rem; }
+    .workbench .col-part-code { width: 16rem; }
+    .workbench .pc-row { display: flex; flex-direction: column; gap: .2rem; align-items: flex-start; }
+    .workbench .pc-code {
+      font-family: ui-monospace, monospace;
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--fg-1);
+      word-break: break-all;
+    }
+    .pc-locs {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: .2rem;
+      align-items: center;
+    }
+    .pc-locs-mobile { display: flex; flex-wrap: wrap; gap: .2rem; margin-top: .25rem; }
+    .pc-loc-chip {
+      display: inline-flex;
+      align-items: baseline;
+      gap: .15rem;
+      padding: .12rem .42rem;
+      border-radius: 999px;
+      background: var(--brand-soft, #eef2ff);
+      color: var(--brand, #4338ca);
+      border: 1px solid rgba(67, 56, 202, .15);
+      font-size: .68rem;
+      font-weight: 500;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .pc-loc-chip.pc-loc-primary {
+      background: var(--brand, #4338ca);
+      color: #fff;
+      border-color: var(--brand, #4338ca);
+    }
+    .pc-loc-name { font-weight: 600; }
+    .pc-loc-qty { font-family: ui-monospace, monospace; opacity: .85; }
     .workbench tr.row-PENDING td { background: var(--row-pending); }
     .workbench tr.row-READY td { background: var(--row-ready); }
     .workbench tr.row-COMPLETED td { color: var(--fg-3); }
@@ -1479,7 +1524,22 @@
                     <td><span x-show="row.pi===0" class="col-id" x-text="row.it.location || '—'"></span></td>
                     <td class="col-product"><span x-show="row.pi===0" :title="row.it.product_name || ''" x-text="row.it.product_name || '—'"></span></td>
                     <td class="col-id"><span x-show="row.pi===0" x-text="row.it.sku"></span></td>
-                    <td class="col-id" x-text="row.p.part_code"></td>
+                    <td class="col-id">
+                      <div class="pc-row">
+                        <span class="pc-code" :title="row.p.part_code" x-text="row.p.part_code"></span>
+                        <span class="pc-locs"
+                              x-show="row.p.inventory_locations && row.p.inventory_locations.length"
+                              :title="(row.p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                          <template x-for="(loc, locIdx) in (row.p.inventory_locations || [])" :key="'ploc-' + row.it.id + '-' + row.p.part_code + '-' + locIdx">
+                            <span class="pc-loc-chip"
+                                  :class="locIdx === 0 ? 'pc-loc-primary' : ''">
+                              <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
+                              <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
+                            </span>
+                          </template>
+                        </span>
+                      </div>
+                    </td>
                     <td class="col-part-name" :title="row.p.part_name || ''" x-text="row.p.part_name || '—'"></td>
                     <td class="col-num" x-text="row.p.need"></td>
                     <td class="col-num" :class="row.p.stock > 0 ? 'col-num-pos' : 'col-num-zero'" x-text="row.p.stock"></td>
@@ -1550,7 +1610,19 @@
                   <ul class="parts-list">
                     <template x-for="p in (it.parts || [])" :key="'mp-' + it.id + '-' + p.part_code">
                       <li>
-                        <div class="pcode" :title="p.part_code" x-text="p.part_code"></div>
+                        <div class="pcode-cell">
+                          <div class="pcode" :title="p.part_code" x-text="p.part_code"></div>
+                          <div class="pc-locs pc-locs-mobile"
+                               x-show="p.inventory_locations && p.inventory_locations.length"
+                               :title="(p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                            <template x-for="(loc, locIdx) in (p.inventory_locations || [])" :key="'mploc-' + it.id + '-' + p.part_code + '-' + locIdx">
+                              <span class="pc-loc-chip" :class="locIdx === 0 ? 'pc-loc-primary' : ''">
+                                <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
+                                <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
+                              </span>
+                            </template>
+                          </div>
+                        </div>
                         <div class="pname" :title="p.part_name || ''" x-text="p.part_name || '—'"></div>
                         <div class="pstock">库存 <b x-text="p.stock"></b></div>
                         <div class="pqty">需 <b x-text="p.need"></b></div>
@@ -1651,7 +1723,19 @@
               <div class="rc-parts">
                 <template x-for="p in ((it.parts || []).filter(p => (p.part_code || '').trim()))" :key="'repp-' + it.id + '-' + p.part_code">
                   <div class="rc-part">
-                    <span class="pc" :title="p.part_code" x-text="p.part_code"></span>
+                    <span class="rc-part-main">
+                      <span class="pc" :title="p.part_code" x-text="p.part_code"></span>
+                      <span class="pc-locs pc-locs-repair"
+                            x-show="p.inventory_locations && p.inventory_locations.length"
+                            :title="(p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                        <template x-for="(loc, locIdx) in (p.inventory_locations || [])" :key="'reploc-' + it.id + '-' + p.part_code + '-' + locIdx">
+                          <span class="pc-loc-chip" :class="locIdx === 0 ? 'pc-loc-primary' : ''">
+                            <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
+                            <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
+                          </span>
+                        </template>
+                      </span>
+                    </span>
                     <span class="qty" x-text="p.need || p.qty || 0"></span>
                   </div>
                 </template>
@@ -1728,7 +1812,7 @@
               上传 CSV
               <input type="file" accept=".csv" @change="uploadInventory($event)" style="display:none;" />
             </label>
-            <span style="font-size:.78rem; color:var(--fg-3);">CSV 列名：part_code, part_name, on_hand_qty, location（中文别名也可）</span>
+            <span style="font-size:.78rem; color:var(--fg-3);">CSV 列名：SKU（→ part_code）、数量（→ on_hand_qty）、仓位（→ location）；支持中文别名。多行同 SKU = 多个仓位</span>
           </div>
         </div>
 
