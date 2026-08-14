@@ -150,26 +150,32 @@ class MobilePagerResponsiveTests(unittest.TestCase):
         block = _media_block(".pager")
         self.assertIn(".pager-controls", block)
 
-    def test_mobile_pager_stacks_meta_above_controls(self):
+    def test_mobile_pager_stays_on_one_row_no_flex_direction_column(self):
+        """Cc's 2026-08-14 follow-up: the pager must stay on ONE
+        horizontal row at every viewport width — no vertical stacking,
+        no character-wrap, no ``flex-direction: column``. On narrow
+        mobile widths the controls block scrolls horizontally rather
+        than breaking onto a second line."""
         block = _media_block(".pager")
-        # flex-direction: column on the pager so the meta line ends up
-        # above the controls on narrow screens.
-        self.assertRegex(
+        # The pager itself must keep flex-direction: row even on mobile.
+        # Pin the absence of any column/row-reverse flex-direction for
+        # the .pager selector so a future 'optimisation' cannot flip it
+        # to a stacked layout.
+        self.assertNotRegex(
             block,
-            r'\.pager\s*\{[^}]*flex-direction:\s*column',
+            r"\.pager\s*\{[^}]*flex-direction:\s*column",
+            "pager must NOT stack vertically on mobile (Cc 2026-08-14)",
         )
-        # margin-left: auto is reset to 0 so the controls no longer
-        # push themselves to the right; they sit centred below the
-        # meta line on mobile.
-        self.assertRegex(
+        self.assertNotRegex(
             block,
-            r'\.pager\s+\.pager-controls\s*\{[^}]*margin-left:\s*0',
+            r"\.pager\s*\{[^}]*flex-direction:\s*column-reverse",
         )
-        # Controls themselves use flex-wrap: wrap so the 4 navigation
-        # buttons + page-size dropdown don't overflow horizontally.
-        self.assertRegex(
+        # And the controls row must remain nowrap (no flex-wrap: wrap),
+        # otherwise buttons can wrap onto a second line on narrow widths.
+        self.assertNotRegex(
             block,
-            r'\.pager\s+\.pager-controls\s*\{[^}]*flex-wrap:\s*wrap',
+            r"\.pager\s+\.pager-controls\s*\{[^}]*flex-wrap:\s*wrap",
+            "pager controls must not wrap onto multiple lines on mobile",
         )
 
     def test_mobile_tap_targets_meet_minimum_height(self):
@@ -392,15 +398,248 @@ class ReadyColumnTests(unittest.TestCase):
 
 
 class AdminDeleteAccountTests(unittest.TestCase):
+    """Cc's 2026-08-14 account spec:
+
+    * Admin can delete (deactivate) any non-self account.
+    * DELETE /api/users/{id} is a SOFT-deactivate (active=FALSE,
+      row preserved) so audit/history stays queryable.
+    * UI label updated from "禁用" to "删除账户" with a clear
+      confirmation dialog that mentions 历史数据保留.
+    * Admin cannot delete/deactivate their own account (UI hides
+      the button + backend rejects the request).
+    * Last-active-admin protection is preserved (backend already
+      prevents the last active admin from being deactivated).
+    * returns / repair remain forbidden (admin_required gate)."""
+
+    # -- UI markup -----------------------------------------------------
+
     def test_ui_uses_delete_account_label_and_hides_self_action(self):
         self.assertIn("删除账户", HTML)
         self.assertIn("u.id !== user.id", HTML)
+
+    def test_ui_button_uses_delete_account_label(self):
+        """The button text must say "删除账户" — the old "禁用" label is
+        confusing because the action still leaves the account in the
+        database (just inactive)."""
+        self.assertIn(
+            '@click="deactivateUser(u.id, u.name)" class="btn btn-danger">删除账户',
+            HTML,
+        )
+
+    def test_ui_does_not_use_old_disable_label(self):
+        """Regression guard: the old "禁用" label must be gone from
+        the user-management UI. (We don't ban it everywhere — only on
+        the deactivate-user button — so the regex is anchored.)"""
+        m = re.search(
+            r'<button[^>]*@click="deactivateUser[^>]*>([^<]*)</button>',
+            HTML,
+        )
+        self.assertIsNotNone(m, "deactivate-user <button> not found")
+        label = m.group(1).strip()
+        self.assertNotIn("禁用", label)
+        self.assertEqual(label, "删除账户")
+
+    def test_ui_button_hidden_for_self_and_inactive(self):
+        """Admin must not be able to delete their own account from the
+        UI. The button's x-show must check ``u.id !== user.id``. The
+        button should also be hidden for already-deactivated users
+        (u.active=false) to avoid showing a no-op action."""
+        m = re.search(
+            r'<button[^>]*@click="deactivateUser[^>]*>',
+            HTML,
+        )
+        self.assertIsNotNone(m, "deactivate-user <button> not found")
+        button = m.group(0)
+        # The x-show must include the self-exclusion.
+        self.assertIn("u.id !== user.id", button)
+        # And must gate on u.active so already-deactivated rows hide the button.
+        self.assertIn("u.active", button)
+
+    def test_ui_confirmation_dialog_is_clear_and_mentions_history(self):
+        """The deactivateUser JS handler must confirm with the user.
+        The dialog text must mention 历史数据保留 so the admin knows
+        the action is reversible by re-activating the row, not a hard
+        delete."""
+        m = re.search(
+            r'async deactivateUser\([^)]*\)\s*\{[^}]*confirm\(([^)]+)\)',
+            HTML,
+            flags=re.DOTALL,
+        )
+        self.assertIsNotNone(m, "deactivateUser confirm() not found")
+        dialog = m.group(1)
+        # Must mention the user name (so the admin confirms the right one).
+        self.assertIn("name", dialog)
+        # Must mention 历史数据保留 so admins know it's soft-delete.
+        self.assertIn("历史数据保留", dialog)
+        # Must reference the deactivate/delete action semantically.
+        self.assertTrue(
+            "禁用" in dialog or "删除" in dialog,
+            "dialog must reference the deactivate/delete action",
+        )
+
+    def test_ui_users_section_is_admin_only(self):
+        """The user-management <section> must gate on the admin role so
+        returns / repair never see the delete button."""
+        m = re.search(
+            r'<section[^>]*x-show="tab===\'users\'"',
+            HTML,
+        )
+        # The exact gate might be different (e.g. user.role==='admin'),
+        # so we look for any section that opens the users tab AND
+        # references the admin role somewhere in its x-show chain.
+        m_admin = re.search(
+            r'<section[^>]*x-show="[^"]*users[^"]*"[^>]*>',
+            HTML,
+        )
+        self.assertIsNotNone(m_admin, "users <section> not found")
+        x_show = m_admin.group(0)
+        # The section must gate on admin role. We accept any of:
+        # tab==='users' && user && user.role==='admin'
+        # user && user.role==='admin' && tab==='users'
+        # etc.
+        # Pin "admin" so the gate can never drop the role check.
+        self.assertIn("admin", x_show)
+        # And it must require user !== null (so returns/repair are
+        # blocked even if tab gets set programmatically).
+        self.assertIn("user", x_show)
+
+    # -- Backend source-level guards ------------------------------------
 
     def test_backend_rejects_self_delete(self):
         source = inspect.getsource(users.deactivate_user)
         self.assertIn('user_id == actor["id"]', source)
         self.assertIn("cannot delete your own account", source)
         self.assertIn("cannot deactivate the last admin", source)
+
+    def test_backend_delete_route_uses_soft_deactivate_semantics(self):
+        """DELETE /api/users/{id} is implemented as soft-deactivate
+        (UPDATE active=FALSE) — NOT a hard DELETE row. This preserves
+        the user record so audit_log JOINs still resolve and the user
+        can be re-activated later."""
+        source = inspect.getsource(users.deactivate_user)
+        # Soft-deactivate: set active=FALSE on the existing row.
+        self.assertRegex(
+            source,
+            r'UPDATE\s+users\s+SET\s+active=FALSE',
+            "DELETE /api/users/{id} must soft-deactivate (UPDATE active=FALSE), "
+            "not hard-delete (DELETE FROM users)",
+        )
+        # The endpoint is declared as @router.delete(...). Pin that.
+        self.assertRegex(
+            source,
+            r'@router\.delete\("/\{user_id\}"',
+        )
+
+    def test_backend_records_audit_log_on_deactivate(self):
+        """Every deactivate must write an audit_log row so we can
+        prove who deactivated whom and when."""
+        source = inspect.getsource(users.deactivate_user)
+        self.assertIn("audit_log", source)
+        self.assertIn("'deactivate'", source)
+        self.assertIn("'user'", source)
+
+    def test_backend_self_delete_guard_fires_before_db_work(self):
+        """The admin cannot deactivate their own account. The guard
+        must return 400 before any database work (pool acquisition or
+        SELECT against the DB)."""
+        source = inspect.getsource(users.deactivate_user)
+        # The guard must reference both the actor id and the path param.
+        self.assertIn('user_id == actor["id"]', source)
+        # And raise 400 with a clear message.
+        self.assertIn("HTTPException(400", source)
+        self.assertIn("cannot delete your own account", source)
+        # The guard must come BEFORE the SELECT against the DB so
+        # we don't even touch the DB when the admin targets themselves.
+        guard_pos = source.index('user_id == actor["id"]')
+        # Find the first DB-touching statement: either ``async with
+        # pool().acquire()`` or ``SELECT`` — whichever comes first.
+        db_signals = ("async with pool().acquire()", "SELECT", "INSERT")
+        db_positions = []
+        for sig in db_signals:
+            try:
+                db_positions.append(source.index(sig))
+            except ValueError:
+                continue
+        self.assertGreater(
+            len(db_positions), 0,
+            "expected at least one DB-touching statement in deactivate_user",
+        )
+        first_db = min(db_positions)
+        self.assertLess(
+            guard_pos, first_db,
+            f"self-delete guard must run before any DB call "
+            f"(guard at {guard_pos}, first DB touch at {first_db})",
+        )
+
+    def test_backend_last_admin_protection_preserved(self):
+        """The existing last-active-admin guard must still be present
+        so we can't accidentally lock ourselves out."""
+        source = inspect.getsource(users.deactivate_user)
+        # The guard counts active admins and refuses if <= 1.
+        self.assertRegex(
+            source,
+            r"SELECT\s+COUNT\(\*\)\s+FROM\s+users\s+WHERE\s+role='admin'\s+AND\s+active=TRUE",
+        )
+        self.assertIn("cannot deactivate the last admin", source)
+        self.assertIn("admin_count <= 1", source)
+
+    def test_backend_noop_when_already_deactivated(self):
+        """Deactivating an already-deactivated user is a noop (200 with
+        noop=True). It must NOT raise and must NOT bump audit_log."""
+        source = inspect.getsource(users.deactivate_user)
+        self.assertIn("not existing[\"active\"]", source)
+        self.assertIn("noop", source)
+        self.assertIn("True", source)
+
+    def test_backend_admin_only_role_gate(self):
+        """returns / repair must remain forbidden on DELETE. The
+        admin_required Depends must be wired into the route signature."""
+        source = inspect.getsource(users.deactivate_user)
+        self.assertIn("admin_required", source)
+
+    def test_backend_role_check_present_at_module_level(self):
+        """The coarse-grained admin gate is defined at module level so
+        every endpoint in users.py inherits it. Pin the exact line so
+        a refactor that drops the gate is caught."""
+        module_src = inspect.getsource(users)
+        # admin_required is the only role gate for delete/update/list.
+        # If someone refactors it to a different role (e.g. returns),
+        # this test fails.
+        self.assertIn(
+            'admin_required = Depends(require_role("admin"))',
+            module_src,
+        )
+
+    def test_backend_returns_and_repair_cannot_delete(self):
+        """Pin the module-level admin gate so a refactor that drops it
+        (or replaces it with a less strict role) is caught.
+
+        The HTTP-level behaviour is covered by
+        test_returns_permissions.py::UsersPermissionsTests, but this
+        static guard catches accidental changes to the gate at the
+        import-time wiring level."""
+        module_src = inspect.getsource(users)
+        self.assertIn(
+            'admin_required = Depends(require_role("admin"))',
+            module_src,
+        )
+
+    def test_backend_delete_returns_deactivated_user_record(self):
+        """The response body of a successful deactivate must include
+        at least the user's id, name, and active=False so the front-end
+        can refresh the user list without an extra GET."""
+        source = inspect.getsource(users.deactivate_user)
+        # Look for the return statement and confirm it returns the
+        # deactivated user record (id + name + active=False).
+        m = re.search(
+            r'return\s+\{"id":\s*user_id,\s*"name":\s*existing\["name"\],\s*"active":\s*False\}',
+            source,
+        )
+        self.assertIsNotNone(
+            m,
+            "deactivate_user must return the deactivated user record",
+        )
+
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +657,225 @@ def _slice_html(html: str, start: str, end: str) -> str:
     if e < 0:
         return ""
     return html[s:e]
+
+
+# ---------------------------------------------------------------------------
+# 2026-08-14 follow-up: pagination controls must stay on ONE horizontal row
+# at every viewport width — no flex-direction: column, no character-wrap,
+# no vertical stacking. On narrow mobile widths the pager scrolls
+# horizontally rather than breaking button labels.
+# ---------------------------------------------------------------------------
+
+
+class PagerOneRowContractTests(unittest.TestCase):
+    """Cc's 2026-08-14 spec (follow-up to the bottom-pager work):
+
+      The pagination bar must remain on ONE horizontal row at every
+      viewport width. It must NOT use ``flex-direction: column``, must
+      NOT wrap onto a second line, and must NOT character-break button
+      labels. On narrow mobile widths the pager container may scroll
+      horizontally so the controls stay intact and readable.
+
+    These tests pin that contract by scanning the CSS in
+    ``app/templates/index.html`` for both the desktop block and the
+    ``@media (max-width: 720px)`` mobile block.
+    """
+
+    # -- helpers ------------------------------------------------------
+
+    @staticmethod
+    def _pager_desktop_block():
+        """Return the CSS block for the .pager rule itself (not the
+        @media override). Looks for the OUTER ``.pager { ... }`` that
+        immediately precedes the @media query.
+        """
+        m = re.search(r"\.pager\s*\{([^}]+)\}", HTML)
+        self_obj = unittest.TestCase()
+        self_obj.assertIsNotNone(m, "desktop .pager { ... } rule not found")
+        return m.group(1)
+
+    @staticmethod
+    def _pager_media_block():
+        """Return the body of the @media (max-width: 720px) { ... }
+        block that contains the .pager override."""
+        return _media_block(".pager")
+
+    # -- desktop -----------------------------------------------------
+
+    def test_desktop_pager_is_flex_row_no_wrap(self):
+        """On desktop the .pager is a horizontal flex row that never
+        wraps onto a second line. Pin ``flex-wrap: nowrap`` on the
+        outer .pager rule so a future revert cannot reintroduce the
+        multi-row wrap."""
+        css = self._pager_desktop_block()
+        self.assertRegex(
+            css,
+            r"flex-wrap:\s*nowrap",
+            "desktop .pager must use flex-wrap: nowrap (Cc 2026-08-14)",
+        )
+
+    def test_desktop_pager_uses_white_space_nowrap(self):
+        """The .pager must also pin ``white-space: nowrap`` so button
+        labels can never character-break (e.g. ‘下一\n页’ rendering as
+        two lines inside one button on narrow widths)."""
+        css = self._pager_desktop_block()
+        self.assertIn("white-space: nowrap", css)
+
+    def test_desktop_pager_allows_horizontal_overflow(self):
+        """If the content does not fit horizontally, the .pager must
+        scroll horizontally rather than wrap or stack. Pin
+        ``overflow-x: auto`` (with the iOS smooth-scroll hint) so the
+        contract survives future CSS refactors."""
+        css = self._pager_desktop_block()
+        self.assertIn("overflow-x: auto", css)
+
+    def test_desktop_pager_controls_never_wrap(self):
+        """The controls sub-row must itself stay on one row, regardless
+        of how many buttons it contains. Pin ``flex-wrap: nowrap`` on
+        .pager .pager-controls."""
+        m = re.search(
+            r"\.pager\s+\.pager-controls\s*\{([^}]+)\}",
+            HTML,
+        )
+        self.assertIsNotNone(m, ".pager .pager-controls rule not found")
+        css = m.group(1)
+        self.assertRegex(
+            css,
+            r"flex-wrap:\s*nowrap",
+            ".pager-controls must never wrap buttons onto multiple lines",
+        )
+        self.assertIn("white-space: nowrap", css)
+        self.assertIn("flex-shrink: 0", css)
+
+    def test_desktop_pager_buttons_have_nowrap(self):
+        """Every pager button must keep ``white-space: nowrap`` so the
+        Chinese label ‘下一页’ cannot split across two visual lines
+        inside a single button."""
+        for marker in (
+            'padding: .32rem .7rem',
+        ):
+            self.assertIn(marker, HTML)
+        # Find each .pager .pager-btn { ... } rule and assert nowrap.
+        btn_re = re.compile(
+            r"\.pager\s+\.pager-btn\s*\{([^}]+)\}",
+        )
+        rules = btn_re.findall(HTML)
+        self.assertTrue(rules, ".pager .pager-btn rule not found")
+        for css in rules:
+            self.assertIn(
+                "white-space: nowrap", css,
+                "each .pager-btn rule must pin white-space: nowrap",
+            )
+
+    def test_desktop_pager_no_flex_direction_column(self):
+        """The desktop block must never set flex-direction to anything
+        other than the default (row). Pin the ABSENCE of any column /
+        column-reverse override so a future stacked-pager regression
+        cannot slip in."""
+        css = self._pager_desktop_block()
+        self.assertNotRegex(css, r"flex-direction:\s*column")
+        self.assertNotRegex(css, r"flex-direction:\s*column-reverse")
+
+    # -- mobile -------------------------------------------------------
+
+    def test_mobile_pager_no_flex_direction_column(self):
+        """Mobile must NOT stack the pager vertically. The previous
+        implementation used ``flex-direction: column`` which broke
+        Cc's one-row contract."""
+        block = self._pager_media_block()
+        self.assertNotRegex(
+            block,
+            r"\.pager\s*\{[^}]*flex-direction:\s*column",
+            "mobile .pager must NOT use flex-direction: column",
+        )
+        self.assertNotRegex(
+            block,
+            r"\.pager\s*\{[^}]*flex-direction:\s*column-reverse",
+        )
+
+    def test_mobile_pager_controls_no_wrap(self):
+        """On mobile, the controls block must remain a single row.
+        flex-wrap: wrap is forbidden so the 4 nav buttons + page-size
+        dropdown can never break onto a second line."""
+        block = self._pager_media_block()
+        self.assertNotRegex(
+            block,
+            r"\.pager\s+\.pager-controls\s*\{[^}]*flex-wrap:\s*wrap",
+        )
+
+    def test_mobile_pager_keeps_horizontal_overflow(self):
+        """Mobile inherits the desktop ``overflow-x: auto`` (the rule
+        lives on the outer .pager selector which is NOT inside the
+        @media block — and we want one continuous horizontal scroll
+        bar to appear when the page is narrower than the bar).
+
+        Confirm no @media override re-sets overflow-x to ``visible``
+        (which would break the contract)."""
+        block = self._pager_media_block()
+        self.assertNotRegex(block, r"\.pager\s*\{[^}]*overflow-x:\s*visible")
+
+    def test_mobile_pager_meta_can_shrink_not_controls(self):
+        """Cc's preference on narrow widths: let the meta text shrink
+        first (with text-overflow: ellipsis) but keep the nav buttons
+        intact. Pin ``flex-shrink: 1`` on .pager-meta and
+        ``flex-shrink: 0`` on .pager-controls inside the @media block
+        so the layout collapses in the right direction."""
+        block = self._pager_media_block()
+        self.assertRegex(
+            block,
+            r"\.pager\s+\.pager-meta\s*\{[^}]*flex-shrink:\s*1",
+            "mobile meta text must be allowed to shrink first",
+        )
+        self.assertRegex(
+            block,
+            r"\.pager\s+\.pager-controls\s*\{[^}]*flex-shrink:\s*0",
+            "mobile controls must never shrink (Cc wants nav buttons intact)",
+        )
+        # And the meta must clip cleanly with ellipsis.
+        self.assertRegex(
+            block,
+            r"\.pager\s+\.pager-meta\s*\{[^}]*text-overflow:\s*ellipsis",
+        )
+
+    def test_mobile_pager_buttons_have_min_height_for_tap(self):
+        """The 2.4rem tap-target rule from the previous contract must
+        still hold (Apple HIG / Material touch-target minimum)."""
+        block = self._pager_media_block()
+        self.assertRegex(
+            block,
+            r"\.pager\s+\.pager-btn\s*,\s*\.pager\s+select\.pager-size\s*\{[^}]*min-height:\s*2\.4rem",
+        )
+
+    # -- structure sanity ---------------------------------------------
+
+    def test_pager_markup_contains_no_inline_break_tags(self):
+        """Final guard: the rendered pager buttons must not contain
+        any <br>, <wbr>, or whitespace-only character that would
+        visually break the label into two lines."""
+        # We can't easily balance the .pager <div> with regex (it has
+        # nested <template>s), so use a simple marker: every button
+        # label we care about must appear as a single contiguous
+        # string inside a <button>...</button>, never with an embedded
+        # newline or <br> between the tag and the label.
+        for label in ("« 首页", "‹ 上一页", "下一页 ›", "末页 »"):
+            # The label appears at least once in the document.
+            self.assertIn(label, HTML)
+            # And the exact substring `<button ...>label</button>` must
+            # exist with NO newline, no <br>, no <wbr> between the
+            # open-tag and the label.
+            expected = r"<button[^>]*>" + re.escape(label) + r"</button>"
+            self.assertRegex(
+                HTML, expected,
+                f"button for {label!r} must render as a single contiguous label",
+            )
+            # And that contiguous label must NOT be preceded by an
+            # injected break tag anywhere — confirm with a negative
+            # lookbehind.
+            self.assertNotRegex(
+                HTML,
+                r"<button[^>]*>\s*(<br\b|<wbr\b|\n)" + re.escape(label),
+                f"button for {label!r} must not embed <br>/<wbr>/newline before the label",
+            )
 
 
 class LocationColumnDesktopTests(unittest.TestCase):

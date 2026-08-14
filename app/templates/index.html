@@ -1136,31 +1136,46 @@
 
     /* Pagination controls (READY/PENDING tabs).
        The page-size selector + Prev/Next sit just under the workbench
-       summary. Designed to match the existing .btn / .row gap-xs. */
+       summary. Designed to match the existing .btn / .row gap-xs.
+       Cc's 2026-08-14 contract: the pager must stay on ONE horizontal
+       row at every viewport width — no flex-direction: column, no
+       character wrapping, no vertical stacking. On narrow mobile
+       widths the controls block scrolls horizontally rather than
+       breaking button labels or moving the meta text to its own line. */
     .pager {
-      display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+      display: flex; align-items: center; gap: .5rem; flex-wrap: nowrap;
       padding: .55rem .75rem; margin-top: .5rem;
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: .65rem;
+      white-space: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .pager .pager-meta {
       font-size: .8rem; color: var(--fg-2);
-      display: flex; gap: .35rem; flex-wrap: wrap; align-items: baseline;
+      display: flex; gap: .35rem; flex-wrap: nowrap; align-items: baseline;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .pager .pager-meta b { color: var(--fg); }
     .pager .pager-controls {
       display: flex; gap: .35rem; align-items: center;
       margin-left: auto;
+      flex-wrap: nowrap;
+      flex-shrink: 0;
+      white-space: nowrap;
     }
     .pager select.pager-size {
       padding: .3rem .55rem; border: 1px solid var(--line);
       border-radius: .4rem; font-size: .82rem; background: #fff;
+      white-space: nowrap;
     }
     .pager .pager-btn {
       padding: .32rem .7rem; border: 1px solid var(--line);
       border-radius: .4rem; background: #fff; color: var(--fg);
       cursor: pointer; font-size: .82rem; font-family: inherit;
+      white-space: nowrap;
     }
     .pager .pager-btn:disabled {
       color: var(--fg-3); background: #f8fafc; cursor: not-allowed;
@@ -1171,26 +1186,36 @@
     .pager .pager-page {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: .82rem; color: var(--fg); padding: 0 .25rem;
+      white-space: nowrap;
     }
 
-    /* Mobile (≤720px): stack the meta line above the controls so the
-       buttons / page-size dropdown stay readable on narrow screens and
-       the tap targets stay 2.4rem tall (matches .mobile-filter-bar). */
+    /* Mobile (≤720px): keep the pager on one horizontal row. Tap
+       targets grow to 2.4rem so they remain touch-friendly, but the
+       flex-direction stays row, controls stay nowrap, and the pager
+       itself scrolls horizontally if the page width forces it. The
+       meta text is allowed to shrink first (flex-shrink: 1 on the
+       pager > pager-meta block) so the navigation buttons always
+       remain intact and readable. */
     @media (max-width: 720px) {
       .pager {
-        flex-direction: column;
-        align-items: stretch;
-        gap: .65rem;
+        flex-direction: row;
+        align-items: center;
+        gap: .5rem;
       }
       .pager .pager-meta {
-        justify-content: center;
-        text-align: center;
+        justify-content: flex-start;
+        text-align: left;
+        flex-shrink: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .pager .pager-controls {
-        margin-left: 0;
-        justify-content: center;
-        flex-wrap: wrap;
+        margin-left: auto;
+        justify-content: flex-end;
+        flex-wrap: nowrap;
         gap: .35rem;
+        flex-shrink: 0;
       }
       .pager .pager-btn,
       .pager select.pager-size {
@@ -2018,7 +2043,7 @@
       </section>
 
       <!-- USERS TAB (admin) -->
-      <section x-show="tab==='users'" x-cloak>
+      <section x-show="tab==='users' && user && user.role==='admin'" x-cloak>
       <div class="panel">
         <div class="panel-title">账号管理</div>
         <p style="font-size:.875rem; color:var(--fg-3); margin:0 0 .75rem;">
