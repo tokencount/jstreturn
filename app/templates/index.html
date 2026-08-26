@@ -1917,7 +1917,7 @@
           <div x-show="lookupResults.length" style="margin-top:.65rem; font-size:.85rem; font-family:ui-monospace,monospace; background:#f1f5f9; padding:.5rem .75rem; border-radius:.4rem;">
             <template x-for="result in lookupResults" :key="result.code">
               <div style="display:flex; align-items:center; gap:.65rem; min-height:54px; padding:.25rem 0;">
-                <img x-show="result.imageUrl" :src="result.imageUrl" :alt="result.code" loading="lazy" referrerpolicy="no-referrer" @error="$event.target.style.display='none'" style="width:52px; height:52px; object-fit:contain; border-radius:.35rem; background:white; border:1px solid var(--line);" />
+                <img x-show="result.imageUrl" :src="result.imageUrl" :alt="result.code" loading="lazy" referrerpolicy="no-referrer" role="button" tabindex="0" @click="openImagePreview(result)" @keydown.enter.prevent="openImagePreview(result)" @keydown.space.prevent="openImagePreview(result)" @error="$event.target.style.display='none'" style="width:52px; height:52px; object-fit:contain; border-radius:.35rem; background:white; border:1px solid var(--line); cursor:zoom-in;" />
                 <div x-text="result.text"></div>
               </div>
             </template>
@@ -2212,6 +2212,11 @@ HS-A-OU8035BK-008</pre>
         <button type="button" @click="applyBulkParts()" class="btn primary">展开 (<span x-text="_parseBulkParts(bulkPartsText).length"></span> 条)</button>
       </div>
     </div>
+  </div>
+  <!-- Inventory image preview -->
+  <div x-show="imagePreview.open" x-cloak x-transition.opacity class="modal-back" @click.self="closeImagePreview()" @keydown.escape.window="closeImagePreview()" style="z-index:80; background:rgba(0,0,0,.82);">
+    <button type="button" @click="closeImagePreview()" aria-label="关闭图片" style="position:fixed; top:1rem; right:1rem; width:2.5rem; height:2.5rem; border:0; border-radius:999px; background:rgba(255,255,255,.92); color:#111827; font-size:1.4rem; cursor:pointer;">✕</button>
+    <img :src="imagePreview.url" :alt="imagePreview.code" referrerpolicy="no-referrer" style="display:block; max-width:min(92vw,1000px); max-height:88vh; object-fit:contain; border-radius:.5rem; background:white; box-shadow:0 20px 45px rgba(0,0,0,.4);" />
   </div>
   <!-- EDIT MODAL -->
   <div x-show="editModal.open" x-transition.opacity class="modal-backdrop" @click.self="closeEdit()" style="position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:60; display:flex; align-items:center; justify-content:center; padding:1rem;">
@@ -2560,6 +2565,7 @@ function app() {
     invSummary: { sku_count: 0, total_units: 0, last_updated: null },
     lookupCode: '',
     lookupResults: [],
+    imagePreview: { open: false, url: '', code: '' },
     users: [],
     userForm: { name: '', role: 'returns', telegram_id: null },
     userCreateMsg: '',
@@ -3150,6 +3156,15 @@ function app() {
           return { code, imageUrl: '', text: `${code}｜无库存` };
         }
       }));
+    },
+
+    openImagePreview(result) {
+      if (!result || !result.imageUrl) return;
+      this.imagePreview = { open: true, url: result.imageUrl, code: result.code || '' };
+    },
+
+    closeImagePreview() {
+      this.imagePreview = { open: false, url: '', code: '' };
     },
 
     async loadUsers() {
