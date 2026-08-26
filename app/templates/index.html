@@ -551,7 +551,7 @@
     .repair-view .purchase-panel,
     .repair-view .tab-warn,
     .repair-view .header-extra,
-    .repair-view section:not(.repair-only) {
+    .repair-view section:not(.repair-only):not(.repair-allow) {
       display: none !important;
     }
     .repair-view .topnav {
@@ -1257,7 +1257,7 @@
           </svg>
           录入
         </button>
-        <button @click="goTab('ready')" :class="tab==='ready' && 'active'" class="nav-btn badge-ready" role="tab">
+        <button @click="goTab('ready')" :class="tab==='ready' && 'active'" class="nav-btn badge-ready repair-keep" role="tab">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M5 13l4 4L19 7"/>
           </svg>
@@ -1281,7 +1281,7 @@
           历史
           <span class="badge-num" x-text="counts.COMPLETED || 0"></span>
         </button>
-        <button @click="goTab('inventory');loadSummary()" :class="tab==='inventory' && 'active'" class="nav-btn right" role="tab">
+        <button @click="goTab('inventory');loadSummary()" :class="tab==='inventory' && 'active'" class="nav-btn right repair-keep" role="tab">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 7l9-4 9 4-9 4-9-4z"/>
             <path d="M3 12l9 4 9-4"/>
@@ -1771,7 +1771,7 @@
       </section>
 
       <!-- REPAIR SIMPLIFIED VIEW (P3) -->
-      <section x-show="user && user.role === 'repair'"
+      <section x-show="user && user.role === 'repair' && tab === 'ready'"
                x-cloak
                class="repair-only"
                aria-label="简化维修视图">
@@ -1833,7 +1833,7 @@
       </section>
 
       <!-- INVENTORY TAB -->
-      <section x-show="tab==='inventory'" x-cloak>
+      <section x-show="tab==='inventory'" x-cloak class="repair-allow">
         <!-- Stats cards -->
         <div class="inv-stats">
           <div class="stat">
@@ -2609,6 +2609,10 @@ function app() {
           window.location.replace('/login');
           return;
         }
+      }
+      if (this.user && this.user.role === 'repair') {
+        this.tab = 'ready';
+        await this.loadList('READY');
       }
       this.loadCounts();
       setInterval(() => this.loadCounts(), 30000);

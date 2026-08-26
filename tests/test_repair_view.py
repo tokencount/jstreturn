@@ -33,7 +33,7 @@ class RepairViewMarkupTests(unittest.TestCase):
     def test_repair_only_section_present(self):
         html = _read()
         self.assertIn("class=\"repair-only\"", html)
-        self.assertIn("x-show=\"user && user.role === 'repair'\"", html)
+        self.assertIn("x-show=\"user && user.role === 'repair' && tab === 'ready'\"", html)
 
     def test_container_class_includes_repair_view_for_repair_role(self):
         html = _read()
@@ -175,13 +175,26 @@ class RepairViewCssTests(unittest.TestCase):
 
     def test_repair_view_hides_sections_except_repair_only(self):
         html = _read()
-        # The catch-all rule must exclude the repair-only section.
-        self.assertIn("section:not(.repair-only)", html)
+        # The catch-all rule must preserve the READY repair section and the
+        # read-only inventory-query section.
+        self.assertIn("section:not(.repair-only):not(.repair-allow)", html)
 
     def test_repair_view_hides_nav_buttons(self):
         html = _read()
         # The nav-btn :not(.repair-keep) selector is mentioned
         self.assertIn("nav-btn:not(.repair-keep)", html)
+
+    def test_repair_view_keeps_ready_and_inventory_navigation(self):
+        html = _read()
+        self.assertRegex(html, r"goTab\('ready'\)[^>]+repair-keep")
+        self.assertRegex(html, r"goTab\('inventory'\)[^>]+repair-keep")
+        self.assertIn("class=\"repair-allow\"", html)
+
+    def test_repair_defaults_to_ready_and_loads_ready_items(self):
+        html = _read()
+        self.assertIn("this.user.role === 'repair'", html)
+        self.assertIn("this.tab = 'ready'", html)
+        self.assertIn("await this.loadList('READY')", html)
 
     def test_480px_media_block_compacts_repair_view(self):
         html = _read()
