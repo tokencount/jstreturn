@@ -19,5 +19,7 @@ def test_inventory_lookup_is_batch_and_hides_quantity_and_part_name():
     assert "max-height:88vh" in html
     assert 'draggable="false"' in html
     assert "user-select:none" in html
+    assert 'loading="eager"' in html
+    assert 'loading="lazy"' not in html
     assert "`${r.part_code} · 有 ${r.on_hand_qty}" not in html
     assert "${r.part_name || ''}" not in html
