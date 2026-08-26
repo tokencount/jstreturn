@@ -73,11 +73,13 @@ CREATE INDEX IF NOT EXISTS idx_dp_part      ON public.defective_parts (part_code
 CREATE TABLE IF NOT EXISTS public.inventory_snapshot (
     part_code          TEXT PRIMARY KEY,
     part_name          TEXT,
+    image_url          TEXT,
     on_hand_qty        INTEGER NOT NULL DEFAULT 0,
     location           TEXT,
     source_updated_at  TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.inventory_snapshot ADD COLUMN IF NOT EXISTS image_url TEXT;
 
 -- Inventory locations breakdown (P2 support: multiple warehouse positions per
 -- same part_code). ``inventory_snapshot`` stays the aggregate (one row per

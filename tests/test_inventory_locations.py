@@ -179,6 +179,16 @@ class InventoryUploadAliasesTests(unittest.TestCase):
         self.assertEqual(self.snapshot_rows[0][:3], ("HS-X", None, 5))
         self.assertEqual(self.location_rows, [("HS-X", "R-1-1", 5)])
 
+    def test_accepts_image_url_and_chinese_image_alias(self):
+        image_url = "https://example.com/part.jpg"
+        r = self._post(
+            "inv.csv",
+            ["SKU", "数量", "仓位", "图片"],
+            [["HS-IMG", 2, "A-01", image_url]],
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.snapshot_rows[0], ("HS-IMG", None, 2, "A-01", image_url))
+
     def test_multiple_locations_same_part_code_aggregate(self):
         # Same part_code in multiple rows, each contributing its own
         # (location, qty). The aggregate snapshot row must SUM, while
@@ -428,6 +438,7 @@ class InventoryPreviewTests(unittest.TestCase):
             return {
                 "part_code": "HS-A",
                 "part_name": "套筒",
+                "image_url": "https://example.com/hs-a.jpg",
                 "on_hand_qty": 7,
                 "location": "A-01-01",
                 "updated_at": None,
@@ -442,6 +453,7 @@ class InventoryPreviewTests(unittest.TestCase):
         body = r.json()
         self.assertEqual(body["part_code"], "HS-A")
         self.assertEqual(body["on_hand_qty"], 7)
+        self.assertEqual(body["image_url"], "https://example.com/hs-a.jpg")
         self.assertEqual(body["inventory_locations"], [
             {"location": "A-01-01", "qty": 5},
             {"location": "A-02-03", "qty": 2},

@@ -10,7 +10,8 @@ The CSV columns are flexible. The required columns are:
     数量       — on_hand_qty (alias: qty / 库存 / 在库数量 / stock / 数量)
     仓位       — location (alias: location / 位置 / 库位 / warehouse / 仓位)
 
-Optional: part_name (alias: 名称 / 配件名称 / desc).
+Optional: part_name (alias: 名称 / 配件名称 / desc) and image_url
+(alias: image / 图片 / 图片链接).
 
 Multiple locations for the same part_code are accepted — either as multiple
 CSV rows with the same part_code (each row contributes its qty at its
@@ -39,6 +40,7 @@ router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 class InventoryRow(BaseModel):
     part_code: str
     part_name: Optional[str] = None
+    image_url: Optional[str] = None
     on_hand_qty: int
     location: Optional[str] = None
 
@@ -55,6 +57,7 @@ async def upload_csv(
         数量       on_hand_qty (aliases: qty / 库存 / 在库数量 / stock / 数量)
         仓位       location    (aliases: location / 位置 / 库位 / warehouse / 仓位)
         part_name  part_name   (aliases: 名称 / 配件名称 / desc) — optional
+        image_url  image_url   (aliases: image / 图片 / 图片链接) — optional
 
     Multiple rows with the same part_code are allowed: each row contributes
     its (location, qty) to the per-location breakdown, and the SUM across
@@ -86,6 +89,7 @@ async def upload_csv(
 
     code_col = col("part_code", "编码", "配件编码", "jst_code", "sku")
     name_col = col("part_name", "名称", "配件名称", "desc")
+    image_col = col("image_url", "image", "图片", "图片链接")
     qty_col = col("on_hand_qty", "qty", "库存", "在库数量", "stock", "数量")
     loc_col = col("location", "位置", "库位", "warehouse", "仓位")
     if not code_col or not qty_col:
@@ -100,6 +104,7 @@ async def upload_csv(
     # Track the first non-empty part_name seen per part_code so the aggregate
     # row has a sensible name even if only one of N rows carries it.
     name_by_code: dict[str, str] = {}
+    image_by_code: dict[str, str] = {}
     for r in reader:
         code = (r.get(code_col) or "").strip()
         if not code:
@@ -118,8 +123,11 @@ async def upload_csv(
         # uniqueness constraint (part_code, location) requires *some* key.
         loc_key = loc_value if loc_value else ""
         name_value = (r.get(name_col) or "").strip() if name_col else ""
+        image_value = (r.get(image_col) or "").strip() if image_col else ""
         if name_value and code not in name_by_code:
             name_by_code[code] = name_value
+        if image_value and code not in image_by_code:
+            image_by_code[code] = image_value
         location_rows.append((code, loc_key or None, qty, loc_value or None))
 
     if not location_rows:
@@ -132,6 +140,7 @@ async def upload_csv(
             aggregate[code] = {
                 "part_code": code,
                 "part_name": name_by_code.get(code),
+                "image_url": image_by_code.get(code),
                 "on_hand_qty": 0,
                 "location": None,  # populated below with first non-empty
             }
@@ -146,7 +155,7 @@ async def upload_csv(
         aggregate[code]["location"] = loc
 
     snapshot_rows = [
-        (agg["part_code"], agg["part_name"], agg["on_hand_qty"], agg["location"])
+        (agg["part_code"], agg["part_name"], agg["on_hand_qty"], agg["location"], agg["image_url"])
         for agg in aggregate.values()
     ]
 
@@ -174,8 +183,8 @@ async def upload_csv(
             await conn.execute("TRUNCATE inventory_snapshot, inventory_locations")
             await conn.executemany(
                 """
-                INSERT INTO inventory_snapshot (part_code, part_name, on_hand_qty, location)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO inventory_snapshot (part_code, part_name, on_hand_qty, location, image_url)
+                VALUES ($1, $2, $3, $4, $5)
                 """,
                 snapshot_rows,
             )
@@ -261,7 +270,7 @@ async def preview_one(
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT part_code, part_name, on_hand_qty, location, updated_at
+            SELECT part_code, part_name, image_url, on_hand_qty, location, updated_at
             FROM inventory_snapshot WHERE part_code = $1
             """,
             part_code,

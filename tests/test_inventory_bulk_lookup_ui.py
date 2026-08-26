@@ -11,5 +11,7 @@ def test_inventory_lookup_is_batch_and_hides_quantity_and_part_name():
     assert 'split(/[\\s,，;；]+/)' in html
     assert "`${code}｜无库存`" in html
     assert "locations.join('、')" in html
+    assert ':src="result.imageUrl"' in html
+    assert "imageUrl: r.image_url || ''" in html
     assert "`${r.part_code} · 有 ${r.on_hand_qty}" not in html
     assert "${r.part_name || ''}" not in html

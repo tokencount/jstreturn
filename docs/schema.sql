@@ -149,6 +149,7 @@ ALTER SEQUENCE public.defective_parts_id_seq OWNED BY public.defective_parts.id;
 CREATE TABLE public.inventory_snapshot (
     part_code text NOT NULL,
     part_name text,
+    image_url text,
     on_hand_qty integer DEFAULT 0 NOT NULL,
     location text,
     source_updated_at timestamp with time zone,
