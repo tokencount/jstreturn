@@ -126,7 +126,8 @@
       font-family: inherit; font-size: .95rem;
     }
     .input-row { display: flex; gap: .5rem; align-items: center; }
-    .input-row input { flex: 1; }
+    .input-row input, .input-row textarea { flex: 1; }
+    .input-row textarea { box-sizing: border-box; resize: vertical; }
 
     .alert { padding: .65rem .9rem; border-radius: .5rem; font-size: .875rem; margin-bottom: 1rem; }
     .alert-warn { background: var(--amber-bg); color: var(--amber); }
@@ -1908,12 +1909,16 @@
 
         <!-- Lookup -->
         <div class="panel" style="margin-top: 1rem;">
-          <div class="panel-title">查一个配件库存</div>
+          <div class="panel-title">批量查询配件库存</div>
           <div class="input-row">
-            <input x-model="lookupCode" placeholder="part_code" />
+            <textarea x-model="lookupCode" rows="4" placeholder="输入配件 SKU，一行一个或用逗号分隔"></textarea>
             <button @click="lookupInventory()" class="btn btn-primary">查</button>
           </div>
-          <div x-show="lookupResult" style="margin-top:.65rem; font-size:.85rem; font-family:ui-monospace,monospace; background:#f1f5f9; padding:.5rem .75rem; border-radius:.4rem;" x-text="lookupResult"></div>
+          <div x-show="lookupResults.length" style="margin-top:.65rem; font-size:.85rem; font-family:ui-monospace,monospace; background:#f1f5f9; padding:.5rem .75rem; border-radius:.4rem;">
+            <template x-for="result in lookupResults" :key="result.code">
+              <div x-text="result.text"></div>
+            </template>
+          </div>
         </div>
       </section>
 
@@ -2551,7 +2556,7 @@ function app() {
     uploadMsg: '',
     invSummary: { sku_count: 0, total_units: 0, last_updated: null },
     lookupCode: '',
-    lookupResult: '',
+    lookupResults: [],
     users: [],
     userForm: { name: '', role: 'returns', telegram_id: null },
     userCreateMsg: '',
@@ -3118,12 +3123,30 @@ function app() {
 
     async lookupInventory() {
       if (!this.lookupCode || !this.user) return;
-      try {
-        const r = await this.api('/api/inventory/preview/' + encodeURIComponent(this.lookupCode));
-        this.lookupResult = `${r.part_code} · 有 ${r.on_hand_qty} · ${r.location || '—'} · ${r.part_name || ''}`;
-      } catch (e) {
-        this.lookupResult = '✗ ' + e.message;
-      }
+      const codes = [...new Set(
+        this.lookupCode
+          .split(/[\s,，;；]+/)
+          .map(code => code.trim())
+          .filter(Boolean)
+      )];
+      this.lookupResults = await Promise.all(codes.map(async code => {
+        try {
+          const r = await this.api('/api/inventory/preview/' + encodeURIComponent(code));
+          if (Number(r.on_hand_qty || 0) <= 0) {
+            return { code, text: `${code}｜无库存` };
+          }
+          const locations = [...new Set(
+            (r.inventory_locations || [])
+              .filter(item => Number(item.qty || 0) > 0 && item.location)
+              .map(item => item.location.trim())
+              .filter(Boolean)
+          )];
+          if (!locations.length && r.location) locations.push(r.location.trim());
+          return { code, text: `${code}｜${locations.join('、') || '无库存'}` };
+        } catch (e) {
+          return { code, text: `${code}｜无库存` };
+        }
+      }));
     },
 
     async loadUsers() {
