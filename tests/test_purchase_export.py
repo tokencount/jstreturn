@@ -608,14 +608,14 @@ class TemplateGuardRegressionTests(unittest.TestCase):
         """
         import re
         html = self._load_template()
-        # Find the rc-parts block (everything between <div class="rc-parts">
+        # Find the rc-part-lines block (everything between <div class="rc-part-lines">
         # and its closing </div>).
         m = re.search(
-            r'<div class="rc-parts">\s*(.*?)\s*</div>\s*</article>',
+            r'<div class="rc-part-lines">\s*(.*?)\s*</div>\s*</article>',
             html,
             re.DOTALL,
         )
-        self.assertIsNotNone(m, "rc-parts block not found")
+        self.assertIsNotNone(m, "rc-part-lines block not found")
         rc_parts = m.group(1)
         # No nested <template x-if> allowed inside the rc-parts x-for.
         self.assertNotIn("<template x-if", rc_parts, "x-if still nested inside rc-parts x-for")

@@ -693,7 +693,7 @@
     .repair-view .repair-list-head,
     .repair-view .repair-row {
       display: grid;
-      grid-template-columns: 90px 110px 140px minmax(320px, 1fr) 70px 82px;
+      grid-template-columns: 90px 110px 140px minmax(300px, 1fr) 52px 70px 82px;
       gap: var(--space-3);
       align-items: center;
     }
@@ -728,10 +728,11 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .repair-view .rc-parts { display: flex; flex-direction: column; gap: .2rem; }
+    .repair-view .rc-part-lines { grid-column: 4 / 6; display: flex; flex-direction: column; gap: .2rem; }
+    .repair-view .rc-part-line { display: grid; grid-template-columns: minmax(0, 1fr) 52px; gap: var(--space-3); align-items: start; }
     .repair-view .rc-part { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
     .repair-view .rc-part .pc { font-weight: 600; }
-    .repair-view .rc-part .qty { margin-left: auto; color: var(--brand); font-weight: 700; }
+    .repair-view .rc-qty { color: var(--brand); font-weight: 700; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-sm); }
     .repair-view .rc-status { justify-self: start; }
     .repair-view .rc-actions .btn { padding: .4rem .8rem; font-size: var(--fs-sm); }
     .repair-view-empty {
@@ -762,7 +763,8 @@
       .repair-view .rc-location::before { content: "Location: "; color: var(--fg-3); }
       .repair-view .rc-sku { grid-area: sku; }
       .repair-view .rc-sku::before { content: "SKU: "; color: var(--fg-3); }
-      .repair-view .rc-parts { grid-area: parts; padding-top: var(--space-2); border-top: 1px dashed var(--line); }
+      .repair-view .rc-part-lines { grid-area: parts; padding-top: var(--space-2); border-top: 1px dashed var(--line); }
+      .repair-view .rc-part-line { grid-template-columns: minmax(0, 1fr) 42px; gap: var(--space-2); }
       .repair-view .rc-status { grid-area: status; justify-self: end; }
       .repair-view .rc-actions { grid-area: actions; }
       .repair-view .rc-actions .btn { width: 100%; padding: .7rem; font-size: var(--fs-base); }
@@ -1756,40 +1758,42 @@
                aria-label="简化维修视图">
         <div class="repair-list">
           <div class="repair-list-head" aria-hidden="true">
-            <span>Pallet</span><span>Location</span><span>SKU</span><span>配件 / 仓位</span><span>状态</span><span>操作</span>
+            <span>Pallet</span><span>Location</span><span>SKU</span><span>配件 / 仓位</span><span>数量</span><span>状态</span><span>操作</span>
           </div>
           <template x-for="it in (items || []).filter(i => i.status === 'READY')" :key="'rep-' + it.id">
             <article class="repair-row">
               <div class="rc-pallet" x-text="it.pallet_no"></div>
               <div class="rc-location" :title="it.location || '—'" x-text="it.location || '—'"></div>
               <div class="rc-sku" :title="it.sku" x-text="it.sku"></div>
-              <div class="rc-parts">
+              <div class="rc-part-lines">
                 <template x-for="p in ((it.parts || []).filter(p => (p.part_code || '').trim()))" :key="'repp-' + it.id + '-' + p.part_code">
-                  <div class="rc-part">
-                    <span class="rc-part-main">
-                      <span class="pc" :title="p.part_code" x-text="p.part_code"></span>
-                      <span class="pc-locs pc-locs-repair"
-                            x-show="p.inventory_locations && p.inventory_locations.length"
-                            :title="(p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
-                        <span class="pc-loc-lbl" x-show="p.inventory_locations && p.inventory_locations.length">仓位</span>
-                        <template x-for="(loc, locIdx) in (p.inventory_locations || [])" :key="'reploc-' + it.id + '-' + p.part_code + '-' + locIdx">
-                          <span class="pc-loc-chip" :class="locIdx === 0 ? 'pc-loc-primary' : ''">
-                            <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
-                            <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
-                          </span>
-                        </template>
+                  <div class="rc-part-line">
+                    <div class="rc-part">
+                      <span class="rc-part-main">
+                        <span class="pc" :title="p.part_code" x-text="p.part_code"></span>
+                        <span class="pc-locs pc-locs-repair"
+                              x-show="p.inventory_locations && p.inventory_locations.length"
+                              :title="(p.inventory_locations || []).map(l => (l.location || '默认仓位') + ' × ' + l.qty).join('\n')">
+                          <span class="pc-loc-lbl" x-show="p.inventory_locations && p.inventory_locations.length">仓位</span>
+                          <template x-for="(loc, locIdx) in (p.inventory_locations || [])" :key="'reploc-' + it.id + '-' + p.part_code + '-' + locIdx">
+                            <span class="pc-loc-chip" :class="locIdx === 0 ? 'pc-loc-primary' : ''">
+                              <span class="pc-loc-name" x-text="loc.location || '默认仓位'"></span>
+                              <span class="pc-loc-qty" x-text="' × ' + (loc.qty || 0)"></span>
+                            </span>
+                          </template>
+                        </span>
                       </span>
-                    </span>
-                    <span class="qty" x-text="p.need || p.qty || 0"></span>
+                    </div>
+                    <div class="rc-qty" x-text="p.need || p.qty || 0"></div>
                   </div>
                 </template>
                 <!-- Empty-state is rendered outside the inner x-for so Alpine
                      does not have to move a stale x-if anchor during x-for
                      reorders (which triggers a `Cannot read properties of
                      null (reading 'after')` page error on the READY tab). -->
-                <div class="rc-part" x-show="!((it.parts || []).filter(p => (p.part_code || '').trim()).length)">
-                  <span class="pc">—</span>
-                  <span class="qty">0</span>
+                <div class="rc-part-line" x-show="!((it.parts || []).filter(p => (p.part_code || '').trim()).length)">
+                  <div class="rc-part"><span class="pc">—</span></div>
+                  <div class="rc-qty">0</div>
                 </div>
               </div>
               <div class="rc-status"><span class="status-chip chip chip-READY">READY</span></div>
