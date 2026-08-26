@@ -684,109 +684,88 @@
        Repair-view (simplified READY cards for the repair role)
        ============================================================ */
     .repair-view { display: block; max-width: 100%; min-width: 0; }
-    .repair-view .repair-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: var(--space-3);
-      max-width: 100%;
-      min-width: 0;
-    }
-    .repair-view .repair-card {
-      background: var(--panel);
+    .repair-view .repair-list {
       border: 1px solid var(--line);
       border-radius: var(--radius-lg);
-      padding: var(--space-3) var(--space-4);
-      box-shadow: var(--shadow-sm);
-      max-width: 100%;
-      min-width: 0;
+      background: var(--panel);
       overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      gap: var(--space-2);
     }
-    .repair-view .repair-head {
+    .repair-view .repair-list-head,
+    .repair-view .repair-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-      gap: var(--space-2);
+      grid-template-columns: 90px 110px 140px minmax(320px, 1fr) 70px 82px;
+      gap: var(--space-3);
       align-items: center;
-      min-width: 0;
-      max-width: 100%;
-      overflow: hidden;
     }
-    .repair-view .repair-head .pallet,
-    .repair-view .repair-head .sku {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      min-width: 0;
-      max-width: 100%;
-    }
-    .repair-view .repair-head .pallet { font-size: var(--fs-md); font-weight: 600; }
-    .repair-view .repair-head .sku { font-size: var(--fs-sm); color: var(--fg-2); }
-    .repair-view .repair-loc {
-      font-size: var(--fs-sm);
-      color: var(--fg-2);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
-    }
-    .repair-view .repair-parts {
-      display: flex;
-      flex-direction: column;
-      gap: .25rem;
-      border-top: 1px dashed var(--line);
-      padding-top: var(--space-2);
-      min-width: 0;
-      max-width: 100%;
-      overflow: hidden;
-    }
-    .repair-view .repair-part-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: var(--space-2);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: var(--fs-sm);
-      align-items: center;
-      min-width: 0;
-      max-width: 100%;
-    }
-    .repair-view .repair-part-row .pcode {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      min-width: 0;
-      max-width: 100%;
-      word-break: break-all;
-    }
-    .repair-view .repair-part-row .pqty {
+    .repair-view .repair-list-head {
+      padding: .5rem .75rem;
+      background: #f1f5f9;
+      color: var(--fg-3);
+      font-size: var(--fs-xs);
       font-weight: 600;
-      color: var(--brand);
+      text-transform: uppercase;
+    }
+    .repair-view .repair-row {
+      padding: .55rem .75rem;
+      border: 0;
+      border-top: 1px solid var(--line);
+      border-radius: 0;
+      box-shadow: none;
+      min-width: 0;
+    }
+    .repair-view .repair-row > * { min-width: 0; }
+    .repair-view .rc-pallet,
+    .repair-view .rc-location,
+    .repair-view .rc-sku,
+    .repair-view .rc-parts {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: var(--fs-sm);
+    }
+    .repair-view .rc-pallet { font-weight: 700; }
+    .repair-view .rc-location,
+    .repair-view .rc-sku {
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .repair-view .repair-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: var(--space-2);
-      padding-top: var(--space-2);
-      border-top: 1px solid var(--line);
-    }
-    .repair-view .repair-actions .btn {
-      padding: .55rem 1.1rem;
-      font-size: var(--fs-md);
-    }
+    .repair-view .rc-parts { display: flex; flex-direction: column; gap: .2rem; }
+    .repair-view .rc-part { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+    .repair-view .rc-part .pc { font-weight: 600; }
+    .repair-view .rc-part .qty { margin-left: auto; color: var(--brand); font-weight: 700; }
+    .repair-view .rc-status { justify-self: start; }
+    .repair-view .rc-actions .btn { padding: .4rem .8rem; font-size: var(--fs-sm); }
     .repair-view-empty {
       text-align: center;
       color: var(--fg-3);
       padding: var(--space-5) 0;
     }
-    @media (max-width: 480px) {
-      .repair-view .repair-head {
-        grid-template-columns: minmax(0, 1fr);
+    @media (max-width: 720px) {
+      .repair-view .repair-list { border: 0; background: transparent; overflow: visible; }
+      .repair-view .repair-list-head { display: none; }
+      .repair-view .repair-row {
+        grid-template-columns: 1fr auto;
+        grid-template-areas:
+          "pallet status"
+          "location location"
+          "sku sku"
+          "parts parts"
+          "actions actions";
+        gap: var(--space-2);
+        margin-bottom: var(--space-3);
+        padding: var(--space-3);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--panel);
       }
-      .repair-view .repair-head .sku,
-      .repair-view .repair-head .loc { justify-self: start; }
+      .repair-view .rc-pallet { grid-area: pallet; }
+      .repair-view .rc-location { grid-area: location; }
+      .repair-view .rc-location::before { content: "Location: "; color: var(--fg-3); }
+      .repair-view .rc-sku { grid-area: sku; }
+      .repair-view .rc-sku::before { content: "SKU: "; color: var(--fg-3); }
+      .repair-view .rc-parts { grid-area: parts; padding-top: var(--space-2); border-top: 1px dashed var(--line); }
+      .repair-view .rc-status { grid-area: status; justify-self: end; }
+      .repair-view .rc-actions { grid-area: actions; }
+      .repair-view .rc-actions .btn { width: 100%; padding: .7rem; font-size: var(--fs-base); }
     }
 
     /* Sheet-style editable rows */
@@ -1775,23 +1754,15 @@
                x-cloak
                class="repair-only"
                aria-label="简化维修视图">
-        <div class="repair-cards">
+        <div class="repair-list">
+          <div class="repair-list-head" aria-hidden="true">
+            <span>Pallet</span><span>Location</span><span>SKU</span><span>配件 / 仓位</span><span>状态</span><span>操作</span>
+          </div>
           <template x-for="it in (items || []).filter(i => i.status === 'READY')" :key="'rep-' + it.id">
-            <article class="repair-card">
-              <div class="rc-head">
-                <span class="rc-pallet" x-text="it.pallet_no"></span>
-                <span class="status-chip chip chip-READY" x-text="'READY'"></span>
-              </div>
-              <div class="rc-meta">
-                <div>
-                  <div class="lbl">Location</div>
-                  <div class="val" x-text="it.location || '—'"></div>
-                </div>
-                <div>
-                  <div class="lbl">SKU</div>
-                  <div class="val" x-text="it.sku"></div>
-                </div>
-              </div>
+            <article class="repair-row">
+              <div class="rc-pallet" x-text="it.pallet_no"></div>
+              <div class="rc-location" :title="it.location || '—'" x-text="it.location || '—'"></div>
+              <div class="rc-sku" :title="it.sku" x-text="it.sku"></div>
               <div class="rc-parts">
                 <template x-for="p in ((it.parts || []).filter(p => (p.part_code || '').trim()))" :key="'repp-' + it.id + '-' + p.part_code">
                   <div class="rc-part">
@@ -1821,6 +1792,7 @@
                   <span class="qty">0</span>
                 </div>
               </div>
+              <div class="rc-status"><span class="status-chip chip chip-READY">READY</span></div>
               <div class="rc-actions">
                 <button class="btn btn-primary" @click="complete(it.id)">完成</button>
               </div>
