@@ -13,7 +13,7 @@ def test_inventory_lookup_is_batch_and_hides_quantity_and_part_name():
     assert "locations.join('、')" in html
     assert "locations.join('、') || '—'" in html
     assert ':src="result.imageUrl"' in html
-    assert "imageUrl: r.image_url || ''" in html
+    assert "`/api/inventory/image/${encodeURIComponent(r.part_code)}`" in html
     assert '@click="openImagePreview(result)"' in html
     assert '@keydown.escape.window="closeImagePreview()"' in html
     assert "max-height:88vh" in html

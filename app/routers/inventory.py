@@ -26,8 +26,11 @@ import csv
 import io
 from collections import defaultdict
 from typing import Optional
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.auth import require_role
@@ -35,6 +38,9 @@ from app.db import pool
 from app.matcher import reevaluate_all_pending_ready
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
+
+JST_IMAGE_HOST = "jst-yikan-picspace.oss-ap-southeast-1.aliyuncs.com"
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
 class InventoryRow(BaseModel):
@@ -293,3 +299,43 @@ async def preview_one(
         for r in locations
     ]
     return d
+
+
+@router.get("/image/{part_code}")
+async def image_proxy(
+    part_code: str,
+    user: dict = Depends(require_role("admin", "repair", "returns")),
+):
+    """Serve JST part images through the app's own origin.
+
+    Some client browsers intermittently fail to render later images when
+    loading Aliyun OSS directly. Only the fixed JST image host is allowed so
+    this endpoint cannot become a general-purpose SSRF proxy.
+    """
+    async with pool().acquire() as conn:
+        image_url = await conn.fetchval(
+            "SELECT image_url FROM inventory_snapshot WHERE part_code = $1",
+            part_code,
+        )
+    if not image_url:
+        raise HTTPException(404, "image not found")
+
+    parsed = urlparse(image_url)
+    if parsed.scheme != "https" or parsed.hostname != JST_IMAGE_HOST:
+        raise HTTPException(400, "unsupported image host")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            upstream = await client.get(image_url)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "image upstream unavailable") from exc
+    if upstream.status_code != 200:
+        raise HTTPException(502, "image upstream unavailable")
+    content_type = upstream.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if not content_type.startswith("image/") or len(upstream.content) > MAX_IMAGE_BYTES:
+        raise HTTPException(502, "invalid image response")
+    return Response(
+        content=upstream.content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
+    )

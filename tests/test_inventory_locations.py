@@ -464,6 +464,35 @@ class InventoryPreviewTests(unittest.TestCase):
         r = self.client.get("/api/inventory/preview/UNKNOWN")
         self.assertEqual(r.status_code, 404)
 
+    def test_image_proxy_serves_only_jst_image_content(self):
+        image_url = (
+            "https://jst-yikan-picspace.oss-ap-southeast-1.aliyuncs.com/"
+            "yikan/test.png"
+        )
+        self.conn.fetchval = AsyncMock(return_value=image_url)
+
+        class FakeResponse:
+            status_code = 200
+            headers = {"content-type": "image/png"}
+            content = b"png-bytes"
+
+        client = AsyncMock()
+        client.get.return_value = FakeResponse()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = None
+        with patch.object(inventory_mod.httpx, "AsyncClient", return_value=client):
+            r = self.client.get("/api/inventory/image/HS-A")
+
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.headers["content-type"], "image/png")
+        self.assertEqual(r.content, b"png-bytes")
+        self.assertEqual(r.headers["cache-control"], "public, max-age=86400")
+
+    def test_image_proxy_rejects_untrusted_host(self):
+        self.conn.fetchval = AsyncMock(return_value="https://example.com/part.png")
+        r = self.client.get("/api/inventory/image/HS-A")
+        self.assertEqual(r.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
