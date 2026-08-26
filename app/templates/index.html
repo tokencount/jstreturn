@@ -3145,7 +3145,7 @@ function app() {
               .filter(Boolean)
           )];
           if (!locations.length && r.location) locations.push(r.location.trim());
-          return { code, imageUrl: r.image_url || '', text: `${code}｜${locations.join('、') || '无库存'}` };
+          return { code, imageUrl: r.image_url || '', text: `${code}｜${locations.join('、') || '—'}` };
         } catch (e) {
           return { code, imageUrl: '', text: `${code}｜无库存` };
         }
