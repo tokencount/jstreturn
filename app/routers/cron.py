@@ -82,3 +82,58 @@ async def pull_inventory():
         "ok": False,
         "reason": "JST fetcher not implemented yet (waiting for Cc's instructions)",
     }
+
+
+@router.post("/lookup-location", dependencies=[Depends(check_cron_secret)])
+async def lookup_location(part_codes: list[str] = [], warehouse: str = ""):
+    """Ad-hoc admin/Cc query: per-part_code location breakdown.
+
+    POST body (JSON): {"part_codes": ["HE-CT37851BR-001", ...], "warehouse": "Chong"}
+    - part_codes: optional list of part_codes; empty = no filter (returns first 50).
+    - warehouse: optional warehouse substring filter (matches location column).
+    Returns rows from inventory_locations joined with inventory_snapshot aggregate.
+    """
+    async with pool().acquire() as conn:
+        if part_codes:
+            rows = await conn.fetch(
+                """
+                SELECT l.part_code,
+                       s.part_name,
+                       s.on_hand_qty AS total_qty,
+                       l.location,
+                       l.qty,
+                       s.updated_at
+                FROM inventory_locations l
+                LEFT JOIN inventory_snapshot s ON s.part_code = l.part_code
+                WHERE l.part_code = ANY($1::text[])
+                  AND ($2 = '' OR l.location ILIKE '%' || $2 || '%')
+                ORDER BY l.part_code, l.qty DESC, l.location ASC
+                """,
+                part_codes,
+                warehouse,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT l.part_code,
+                       s.part_name,
+                       s.on_hand_qty AS total_qty,
+                       l.location,
+                       l.qty,
+                       s.updated_at
+                FROM inventory_locations l
+                LEFT JOIN inventory_snapshot s ON s.part_code = l.part_code
+                WHERE ($1 = '' OR l.location ILIKE '%' || $1 || '%')
+                ORDER BY l.part_code, l.qty DESC, l.location ASC
+                LIMIT 50
+                """,
+                warehouse,
+            )
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["updated_at"] = d["updated_at"].isoformat() if d["updated_at"] else None
+        d["total_qty"] = int(d["total_qty"] or 0)
+        d["qty"] = int(d["qty"] or 0)
+        out.append(d)
+    return {"count": len(out), "rows": out}
