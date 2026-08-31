@@ -4,7 +4,9 @@ import inspect
 import io
 import json
 import unittest
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import openpyxl
 
@@ -42,6 +44,19 @@ class SpxParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "required SPX columns"):
             spx.parse_spx_xlsx(raw)
 
+    def test_decode_items_json_accepts_asyncpg_string(self):
+        self.assertEqual(
+            spx.decode_items_json('[{"sku":"ABC","qty":2}]'),
+            [{"sku": "ABC", "qty": 2}],
+        )
+
+    def test_parse_common_spx_day_first_timestamp_as_malaysia_time(self):
+        parsed = spx.parse_create_time("01/09/2026 05:20:30")
+        self.assertEqual(parsed, datetime(2026, 9, 1, 5, 20, 30, tzinfo=ZoneInfo("Asia/Kuala_Lumpur")))
+
+    def test_invalid_create_time_returns_none_for_uploaded_at_fallback(self):
+        self.assertIsNone(spx.parse_create_time("not-a-date"))
+
 
 class FakeConnection:
     def __init__(self, rows):
@@ -78,6 +93,17 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("await ensure_spx_table()", inspect.getsource(spx.upload_spx))
         self.assertIn("await ensure_spx_table()", inspect.getsource(spx.lookup_tracking))
         self.assertIn("await ensure_spx_table()", inspect.getsource(spx.pick_list))
+
+    def test_lookup_normalizes_tracking_and_decodes_jsonb(self):
+        source = inspect.getsource(spx.lookup_tracking)
+        self.assertIn("UPPER(TRIM(tracking_no))", source)
+        self.assertIn("UPPER(TRIM($1))", source)
+        self.assertIn("decode_items_json", source)
+
+    def test_pick_list_falls_back_to_upload_time_and_decodes_jsonb(self):
+        source = inspect.getsource(spx.pick_list)
+        self.assertIn("COALESCE(create_time, uploaded_at)", source)
+        self.assertIn("decode_items_json", source)
 
     def test_ui_contains_buttons_sections_and_http_error_handling(self):
         html = (Path(__file__).parents[1] / "app/templates/index.html").read_text(encoding="utf-8")

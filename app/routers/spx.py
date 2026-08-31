@@ -12,8 +12,9 @@ import io
 import json
 import logging
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
@@ -25,6 +26,7 @@ from app.db import pool
 
 router = APIRouter(prefix="/api/spx", tags=["spx"])
 log = logging.getLogger("jstreturn.spx")
+KLT = ZoneInfo("Asia/Kuala_Lumpur")
 
 # ---------------------------------------------------------------------------
 # SKU parsing helpers
@@ -56,6 +58,44 @@ def base_sku(sku: str) -> str:
     if m:
         return m.group(1)
     return sku
+
+
+def decode_items_json(value) -> list[dict]:
+    """Normalize asyncpg JSONB output (string by default) to a list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, list):
+        raise ValueError("items_json must be a list")
+    return value
+
+
+def parse_create_time(value: str) -> Optional[datetime]:
+    """Parse common SPX timestamps and interpret naive values as Malaysia time."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parsed = None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00").replace(" ", "T"))
+    except ValueError:
+        for fmt in (
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+            "%Y/%m/%d %H:%M:%S",
+            "%Y/%m/%d %H:%M",
+            "%d-%m-%Y %H:%M:%S",
+            "%d-%m-%Y %H:%M",
+        ):
+            try:
+                parsed = datetime.strptime(raw, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+    return parsed.replace(tzinfo=KLT) if parsed.tzinfo is None else parsed
 
 
 async def resolve_location(conn, sku: str) -> Optional[str]:
@@ -296,10 +336,7 @@ async def upload_spx(
             ]
             create_ts = None
             if row["create_time"]:
-                try:
-                    create_ts = datetime.fromisoformat(row["create_time"].replace(" ", "T"))
-                except Exception:
-                    pass
+                create_ts = parse_create_time(row["create_time"])
             result = await conn.execute(
                 """
                 INSERT INTO spx_shipments (tracking_no, create_time, items_json)
@@ -329,7 +366,11 @@ async def lookup_tracking(
     await ensure_spx_table()
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT tracking_no, create_time, items_json FROM spx_shipments WHERE tracking_no = $1",
+            """SELECT tracking_no,
+                      COALESCE(create_time, uploaded_at) AS effective_time,
+                      items_json
+               FROM spx_shipments
+               WHERE UPPER(TRIM(tracking_no)) = UPPER(TRIM($1))""",
             tracking_no,
         )
 
@@ -338,7 +379,7 @@ async def lookup_tracking(
 
     items_out = []
     async with pool().acquire() as conn:
-        for item in (row["items_json"] or []):
+        for item in decode_items_json(row["items_json"]):
             sku = item.get("sku", "")
             our_loc = await resolve_location(conn, sku)
             items_out.append(ShipmentItemOut(
@@ -350,7 +391,7 @@ async def lookup_tracking(
 
     return ShipmentOut(
         tracking_no=row["tracking_no"],
-        create_time=str(row["create_time"] or ""),
+        create_time=str(row["effective_time"] or ""),
         items=items_out,
     )
 
@@ -368,16 +409,19 @@ async def pick_list(
         raise HTTPException(400, "date_str must be YYYY-MM-DD")
 
     await ensure_spx_table()
-    start = datetime.combine(target_date, datetime.min.time())
-    end   = datetime.combine(target_date, datetime.max.time())
+    start = datetime.combine(target_date, time.min, tzinfo=KLT)
+    end = start + timedelta(days=1)
 
     async with pool().acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT tracking_no, create_time, items_json
+            SELECT tracking_no,
+                   COALESCE(create_time, uploaded_at) AS effective_time,
+                   items_json
             FROM spx_shipments
-            WHERE create_time BETWEEN $1 AND $2
-            ORDER BY create_time
+            WHERE COALESCE(create_time, uploaded_at) >= $1
+              AND COALESCE(create_time, uploaded_at) < $2
+            ORDER BY COALESCE(create_time, uploaded_at)
             """,
             start, end,
         )
@@ -385,12 +429,12 @@ async def pick_list(
     items_out: list[PickListItem] = []
     async with pool().acquire() as conn:
         for row in rows:
-            for item in (row["items_json"] or []):
+            for item in decode_items_json(row["items_json"]):
                 sku = item.get("sku", "")
                 our_loc = await resolve_location(conn, sku)
                 items_out.append(PickListItem(
                     tracking_no=row["tracking_no"],
-                    create_time=str(row["create_time"] or ""),
+                    create_time=str(row["effective_time"] or ""),
                     sku=sku,
                     qty=item.get("qty", 1),
                     our_location=our_loc,
