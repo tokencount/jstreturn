@@ -586,6 +586,10 @@ class TemplateGuardRegressionTests(unittest.TestCase):
         html = self._load_template()
         self.assertIn("(purchaseSummary && purchaseSummary.business_date)", html)
 
+    def test_purchase_today_klt_button_removed(self):
+        html = self._load_template()
+        self.assertNotIn("今天 (KLT)", html)
+
     def test_purchase_by_warehouse_guarded(self):
         html = self._load_template()
         self.assertIn(
