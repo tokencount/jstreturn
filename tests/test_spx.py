@@ -127,6 +127,11 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("generateSpxPickSummary()", html)
         self.assertIn("拣货单 · SKU 汇总", html)
         self.assertIn("数量总和", html)
+        self.assertIn("<th>仓位</th>", html)
+        self.assertNotIn("我们的仓位", html)
+        self.assertNotIn("员工仓位", html)
+        self.assertIn("item.our_location || item.employee_location || '—'", html)
+        self.assertIn("const location = item.our_location || item.employee_location", html)
 
 
 if __name__ == "__main__":

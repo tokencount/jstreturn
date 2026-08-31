@@ -2228,8 +2228,7 @@
                 <tr>
                   <th>SKU</th>
                   <th>数量</th>
-                  <th>员工仓位</th>
-                  <th>我们的仓位</th>
+                  <th>仓位</th>
                 </tr>
               </thead>
               <tbody>
@@ -2237,15 +2236,11 @@
                   <tr>
                     <td class="mono" x-text="item.sku"></td>
                     <td class="mono" x-text="item.qty"></td>
-                    <td class="mono" x-text="item.employee_location || '—'"></td>
-                    <td>
-                      <span x-show="item.our_location" class="mono" x-text="item.our_location"></span>
-                      <span x-show="!item.our_location" style="color:var(--red); font-size:.8rem;">无库存</span>
-                    </td>
+                    <td class="mono" x-text="item.our_location || item.employee_location || '—'"></td>
                   </tr>
                 </template>
                 <template x-if="!(spxLookupResult.items && spxLookupResult.items.length)">
-                  <tr><td colspan="4" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
+                  <tr><td colspan="3" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
                 </template>
               </tbody>
             </table>
@@ -2312,7 +2307,7 @@
                 总数量 <b x-text="spxPickSummaryRows.reduce((sum,row) => sum + row.qty, 0)"></b>
               </div>
               <table class="def-table">
-                <thead><tr><th>SKU</th><th>数量总和</th><th>我们的仓位</th><th>运单数</th></tr></thead>
+                <thead><tr><th>SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th></tr></thead>
                 <tbody>
                   <template x-for="row in spxPickSummaryRows" :key="row.sku">
                     <tr>
@@ -3120,7 +3115,8 @@ function app() {
         if (!grouped.has(sku)) grouped.set(sku, { sku, qty: 0, locations: new Set(), trackings: new Set() });
         const row = grouped.get(sku);
         row.qty += Number(item.qty || 0);
-        if (item.our_location) row.locations.add(item.our_location);
+        const location = item.our_location || item.employee_location;
+        if (location) row.locations.add(location);
         row.trackings.add(item.tracking_no);
       }
       this.spxPickSummaryRows = [...grouped.values()]
