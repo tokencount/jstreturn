@@ -79,6 +79,22 @@ class SpxLocationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await spx.resolve_location(conn, "ABC-001"), "B-02")
         self.assertEqual(conn.queries, ["ABC-001", "ABC"])
 
+    async def test_all_sku_details_exact_match(self):
+        conn = FakeConnection([{"location": "P-01", "image_url": "https://img/abc.jpg"}])
+        self.assertEqual(
+            await spx.resolve_all_sku_details(conn, "ABC-001"),
+            {"location": "P-01", "image_url": "https://img/abc.jpg"},
+        )
+        self.assertEqual(conn.queries, ["ABC-001"])
+
+    async def test_all_sku_details_base_fallback(self):
+        conn = FakeConnection([None, {"location": "P-02", "image_url": "https://img/base.jpg"}])
+        self.assertEqual(
+            await spx.resolve_all_sku_details(conn, "ABC-001"),
+            {"location": "P-02", "image_url": "https://img/base.jpg"},
+        )
+        self.assertEqual(conn.queries, ["ABC-001", "ABC"])
+
 
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
@@ -103,6 +119,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("UPPER(TRIM(tracking_no))", source)
         self.assertIn("UPPER(TRIM($1))", source)
         self.assertIn("decode_items_json", source)
+        self.assertIn("resolve_all_sku_details", source)
+        self.assertIn("image_url", source)
 
     def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):
         source = inspect.getsource(spx.pick_list)
@@ -138,6 +156,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertNotIn("我们的仓位", html)
         self.assertNotIn("员工仓位", html)
         self.assertIn("item.our_location || item.employee_location || '—'", html)
+        self.assertIn("<th>图片</th>", html)
+        self.assertIn("x-show=\"item.image_url\"", html)
         self.assertIn("const location = item.our_location || item.employee_location", html)
         self.assertIn("removeSpxPickSku(row.sku)", html)
         self.assertIn("removeSpxPickSku(sku)", html)

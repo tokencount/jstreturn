@@ -124,6 +124,26 @@ async def resolve_location(conn, sku: str) -> Optional[str]:
     return None
 
 
+async def resolve_all_sku_details(conn, sku: str) -> Optional[dict]:
+    """Return the new-goods image/location, trying exact then base SKU."""
+    row = await conn.fetchrow(
+        "SELECT location, image_url FROM spx_all_sku_inventory WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))",
+        sku,
+    )
+    if row:
+        return dict(row)
+
+    base = base_sku(sku)
+    if base != sku:
+        row = await conn.fetchrow(
+            "SELECT location, image_url FROM spx_all_sku_inventory WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))",
+            base,
+        )
+        if row:
+            return dict(row)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Excel parser
 # ---------------------------------------------------------------------------
@@ -247,6 +267,7 @@ class ShipmentItemOut(BaseModel):
     qty: int
     employee_location: str
     our_location: Optional[str] = None  # None = not in stock
+    image_url: str = ""
 
 
 class ShipmentOut(BaseModel):
@@ -440,6 +461,7 @@ async def lookup_tracking(
     """Scan a Tracking No. → return SKUs, our location, employee location."""
 
     await ensure_spx_table()
+    await ensure_all_sku_table()
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
             """SELECT tracking_no,
@@ -457,12 +479,14 @@ async def lookup_tracking(
     async with pool().acquire() as conn:
         for item in decode_items_json(row["items_json"]):
             sku = item.get("sku", "")
-            our_loc = await resolve_location(conn, sku)
+            all_sku = await resolve_all_sku_details(conn, sku)
+            our_loc = (all_sku or {}).get("location") or await resolve_location(conn, sku)
             items_out.append(ShipmentItemOut(
                 sku=sku,
                 qty=item.get("qty", 1),
                 employee_location=item.get("employee_location", ""),
                 our_location=our_loc,
+                image_url=(all_sku or {}).get("image_url", ""),
             ))
 
     return ShipmentOut(

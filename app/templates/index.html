@@ -2273,6 +2273,7 @@
             <table class="def-table">
               <thead>
                 <tr>
+                  <th>图片</th>
                   <th>SKU</th>
                   <th>数量</th>
                   <th>仓位</th>
@@ -2281,13 +2282,14 @@
               <tbody>
                 <template x-for="(item, idx) in (spxLookupResult.items || [])" :key="idx">
                   <tr>
+                    <td><img x-show="item.image_url" :src="item.image_url" referrerpolicy="no-referrer" alt="" style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white;" /></td>
                     <td class="mono" x-text="item.sku"></td>
                     <td class="mono" x-text="item.qty"></td>
                     <td class="mono" x-text="item.our_location || item.employee_location || '—'"></td>
                   </tr>
                 </template>
                 <template x-if="!(spxLookupResult.items && spxLookupResult.items.length)">
-                  <tr><td colspan="3" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
+                  <tr><td colspan="4" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
                 </template>
               </tbody>
             </table>
