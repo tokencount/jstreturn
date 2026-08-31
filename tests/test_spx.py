@@ -100,9 +100,10 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("UPPER(TRIM($1))", source)
         self.assertIn("decode_items_json", source)
 
-    def test_pick_list_falls_back_to_upload_time_and_decodes_jsonb(self):
+    def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):
         source = inspect.getsource(spx.pick_list)
-        self.assertIn("COALESCE(create_time, uploaded_at)", source)
+        self.assertIn("WHERE uploaded_at >= $1", source)
+        self.assertIn("AND uploaded_at < $2", source)
         self.assertIn("decode_items_json", source)
 
     def test_ui_contains_buttons_sections_and_http_error_handling(self):

@@ -419,9 +419,9 @@ async def pick_list(
                    COALESCE(create_time, uploaded_at) AS effective_time,
                    items_json
             FROM spx_shipments
-            WHERE COALESCE(create_time, uploaded_at) >= $1
-              AND COALESCE(create_time, uploaded_at) < $2
-            ORDER BY COALESCE(create_time, uploaded_at)
+            WHERE uploaded_at >= $1
+              AND uploaded_at < $2
+            ORDER BY uploaded_at, tracking_no
             """,
             start, end,
         )
