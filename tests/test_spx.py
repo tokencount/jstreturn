@@ -145,6 +145,9 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("WHERE uploaded_at >= $1", source)
         self.assertIn("AND uploaded_at < $2", source)
         self.assertIn("decode_items_json", source)
+        self.assertIn("resolve_all_sku_details", source)
+        self.assertIn("resolve_parts_sku_details", source)
+        self.assertIn('or "无库存"', source)
 
     def test_all_sku_catalogue_is_separate_from_parts_inventory(self):
         source = Path(spx.__file__).read_text(encoding="utf-8")
@@ -181,6 +184,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("removeSpxPickSku(sku)", html)
         self.assertIn("row.sku !== sku", html)
         self.assertIn("打印 A4", html)
+        self.assertIn(':disabled="!spxPickGenerated"', html)
         self.assertIn("@page { size: A4 portrait", html)
         self.assertIn("spx-pick-print-area", html)
         self.assertIn("@click=\"window.print()\"", html)

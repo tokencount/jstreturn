@@ -540,6 +540,7 @@ async def pick_list(
         raise HTTPException(400, "date_str must be YYYY-MM-DD")
 
     await ensure_spx_table()
+    await ensure_all_sku_table()
     start = datetime.combine(target_date, time.min, tzinfo=KLT)
     end = start + timedelta(days=1)
 
@@ -562,7 +563,11 @@ async def pick_list(
         for row in rows:
             for item in decode_items_json(row["items_json"]):
                 sku = item.get("sku", "")
-                our_loc = await resolve_location(conn, sku)
+                all_sku = await resolve_all_sku_details(conn, sku)
+                parts_sku = await resolve_parts_sku_details(conn, sku)
+                our_loc = ((all_sku or {}).get("location")
+                           or (parts_sku or {}).get("location")
+                           or "无库存")
                 items_out.append(PickListItem(
                     tracking_no=row["tracking_no"],
                     create_time=str(row["effective_time"] or ""),

@@ -2320,6 +2320,7 @@
               <button class="btn btn-primary" :disabled="!spxSelectedTrackings.length" @click="generateSpxPickSummary()">
                 生成拣货单（<span x-text="spxSelectedTrackings.length"></span> 运单）
               </button>
+              <button class="btn btn-primary" :disabled="!spxPickGenerated" @click="window.print()">打印 A4</button>
             </div>
             <table class="def-table">
               <thead>
@@ -2348,10 +2349,7 @@
             </table>
 
             <div x-show="spxPickGenerated" class="spx-pick-print-area" style="margin-top:1rem;">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.5rem;">
-                <h3 style="margin:0;">拣货单 · SKU 汇总</h3>
-                <button class="btn btn-primary no-print" @click="window.print()">打印 A4</button>
-              </div>
+              <h3 style="margin:0 0 .5rem;">拣货单 · SKU 汇总</h3>
               <div style="font-size:.85rem; color:var(--fg-2); margin-bottom:.5rem;">
                 日期 <b x-text="spxPickResult.date"></b> ·
                 已选择 <b x-text="spxSelectedTrackings.length"></b> 个运单 ·
