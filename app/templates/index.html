@@ -2307,7 +2307,7 @@
                 总数量 <b x-text="spxPickSummaryRows.reduce((sum,row) => sum + row.qty, 0)"></b>
               </div>
               <table class="def-table">
-                <thead><tr><th>SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th></tr></thead>
+                <thead><tr><th>SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th><th>操作</th></tr></thead>
                 <tbody>
                   <template x-for="row in spxPickSummaryRows" :key="row.sku">
                     <tr>
@@ -2315,6 +2315,7 @@
                       <td class="mono" x-text="row.qty"></td>
                       <td class="mono" x-text="row.locations || '—'"></td>
                       <td class="mono" x-text="row.tracking_count"></td>
+                      <td><button class="btn" @click="removeSpxPickSku(row.sku)">移除</button></td>
                     </tr>
                   </template>
                 </tbody>
@@ -3123,6 +3124,10 @@ function app() {
         .map(row => ({ sku: row.sku, qty: row.qty, locations: [...row.locations].join(', '), tracking_count: row.trackings.size }))
         .sort((a, b) => a.sku.localeCompare(b.sku));
       this.spxPickGenerated = true;
+    },
+
+    removeSpxPickSku(sku) {
+      this.spxPickSummaryRows = this.spxPickSummaryRows.filter(row => row.sku !== sku);
     },
 
     async exportPurchase() {

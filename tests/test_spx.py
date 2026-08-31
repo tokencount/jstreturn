@@ -132,6 +132,9 @@ class SpxContractTests(unittest.TestCase):
         self.assertNotIn("员工仓位", html)
         self.assertIn("item.our_location || item.employee_location || '—'", html)
         self.assertIn("const location = item.our_location || item.employee_location", html)
+        self.assertIn("removeSpxPickSku(row.sku)", html)
+        self.assertIn("removeSpxPickSku(sku)", html)
+        self.assertIn("row.sku !== sku", html)
 
 
 if __name__ == "__main__":
