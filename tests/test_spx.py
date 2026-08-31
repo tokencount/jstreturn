@@ -95,6 +95,22 @@ class SpxLocationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(conn.queries, ["ABC-001", "ABC"])
 
+    async def test_parts_sku_details_exact_match(self):
+        conn = FakeConnection([{"location": "PART-01", "image_url": "https://img/part.jpg"}])
+        self.assertEqual(
+            await spx.resolve_parts_sku_details(conn, "HS-PART-001"),
+            {"location": "PART-01", "image_url": "https://img/part.jpg"},
+        )
+        self.assertEqual(conn.queries, ["HS-PART-001"])
+
+    async def test_parts_sku_details_base_fallback(self):
+        conn = FakeConnection([None, {"location": "PART-02", "image_url": "https://img/base-part.jpg"}])
+        self.assertEqual(
+            await spx.resolve_parts_sku_details(conn, "HS-PART-001"),
+            {"location": "PART-02", "image_url": "https://img/base-part.jpg"},
+        )
+        self.assertEqual(conn.queries, ["HS-PART-001", "HS-PART"])
+
 
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
@@ -120,6 +136,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("UPPER(TRIM($1))", source)
         self.assertIn("decode_items_json", source)
         self.assertIn("resolve_all_sku_details", source)
+        self.assertIn("resolve_parts_sku_details", source)
         self.assertIn("image_url", source)
 
     def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):

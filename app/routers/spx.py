@@ -124,6 +124,32 @@ async def resolve_location(conn, sku: str) -> Optional[str]:
     return None
 
 
+async def resolve_parts_sku_details(conn, sku: str) -> Optional[dict]:
+    """Return parts-inventory image/location, trying exact then base SKU."""
+    row = await conn.fetchrow(
+        """SELECT location, COALESCE(image_url, '') AS image_url
+           FROM inventory_snapshot
+           WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+           LIMIT 1""",
+        sku,
+    )
+    if row:
+        return dict(row)
+
+    base = base_sku(sku)
+    if base != sku:
+        row = await conn.fetchrow(
+            """SELECT location, COALESCE(image_url, '') AS image_url
+               FROM inventory_snapshot
+               WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+               LIMIT 1""",
+            base,
+        )
+        if row:
+            return dict(row)
+    return None
+
+
 async def resolve_all_sku_details(conn, sku: str) -> Optional[dict]:
     """Return the new-goods image/location, trying exact then base SKU."""
     row = await conn.fetchrow(
@@ -480,13 +506,18 @@ async def lookup_tracking(
         for item in decode_items_json(row["items_json"]):
             sku = item.get("sku", "")
             all_sku = await resolve_all_sku_details(conn, sku)
-            our_loc = (all_sku or {}).get("location") or await resolve_location(conn, sku)
+            parts_sku = await resolve_parts_sku_details(conn, sku)
+            our_loc = ((all_sku or {}).get("location")
+                       or (parts_sku or {}).get("location")
+                       or item.get("employee_location", ""))
             items_out.append(ShipmentItemOut(
                 sku=sku,
                 qty=item.get("qty", 1),
                 employee_location=item.get("employee_location", ""),
                 our_location=our_loc,
-                image_url=(all_sku or {}).get("image_url", ""),
+                image_url=((all_sku or {}).get("image_url")
+                           or (parts_sku or {}).get("image_url")
+                           or ""),
             ))
 
     return ShipmentOut(
