@@ -305,7 +305,7 @@ async def ensure_spx_table():
 @router.post("/upload")
 async def upload_spx(
     file: UploadFile = File(...),
-    user: dict = Depends(require_role("admin")),
+    user: dict = Depends(require_role("admin", "returns")),
 ):
     """Upload SPX Excel file.
 

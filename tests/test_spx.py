@@ -85,6 +85,10 @@ class SpxContractTests(unittest.TestCase):
         source = inspect.getsource(spx.lookup_tracking)
         self.assertNotIn("returns", source)
 
+    def test_upload_route_allows_admin_and_returns(self):
+        source = inspect.getsource(spx.upload_spx)
+        self.assertIn('require_role("admin", "returns")', source)
+
     def test_jsonb_payload_is_serialized(self):
         source = Path(spx.__file__).read_text(encoding="utf-8")
         self.assertIn("json.dumps(items_json, ensure_ascii=False)", source)
@@ -114,6 +118,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertNotIn("goTab('spx-upload')", html)
         self.assertNotIn("goTab('spx-lookup')", html)
         self.assertNotIn("goTab('spx-pick')", html)
+        self.assertIn("['admin','repair','returns'].includes(user.role)", html)
+        self.assertIn("['admin','returns'].includes(user.role)", html)
         self.assertIn("this.spxUploadResult = r.ok ? data", html)
         self.assertIn("this.spxPickResult = r.ok ? data", html)
 
