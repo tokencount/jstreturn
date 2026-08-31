@@ -1293,6 +1293,26 @@
           </svg>
           采购导出
         </button>
+        <button x-show="user && user.role==='admin'" @click="goTab('spx-upload')" :class="tab==='spx-upload' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3v14M6 11l6 6 6-6"/>
+            <path d="M5 21h14"/>
+          </svg>
+          发货上传
+        </button>
+        <button x-show="user && ['admin','repair'].includes(user.role)" @click="goTab('spx-lookup')" :class="tab==='spx-lookup' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"/>
+            <path d="m21 21-4.35-4.35"/>
+          </svg>
+          运单查询
+        </button>
+        <button x-show="user && user.role==='admin'" @click="goTab('spx-pick')" :class="tab==='spx-pick' && 'active'" class="nav-btn" role="tab">
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 7h18M3 12h18M3 17h18"/>
+          </svg>
+          拣货单
+        </button>
       </nav>
 
       <!-- CREATE TAB -->
@@ -2171,6 +2191,124 @@
         </p>
       </section>
 
+      <!-- SPX-UPLOAD TAB -->
+      <section x-show="tab==='spx-upload'" x-cloak>
+        <div class="panel" style="margin-bottom:1rem;">
+          <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📤 发货上传</h2>
+          <p style="margin:0 0 1rem; font-size:.85rem; color:var(--fg-2);">上传 .xlsx 格式的运单文件（admin only）</p>
+          <div class="drop-zone" @click="$refs.spxFileInput.click()">
+            <div class="drop-zone-title">点击选择文件或拖拽上传</div>
+            <div class="drop-zone-sub">支持 .xlsx 格式</div>
+            <input type="file" x-ref="spxFileInput" accept=".xlsx" @change="uploadSpxFile($event)" style="display:none;" />
+          </div>
+          <div x-show="spxUploadResult" style="margin-top:.75rem;">
+            <template x-if="spxUploadResult && !spxUploadResult.error">
+              <div class="alert alert-ok">
+                ✓ 上传成功 · 总行数: <b x-text="spxUploadResult.total_rows"></b> · 保存: <b x-text="spxUploadResult.saved_rows"></b>
+              </div>
+            </template>
+            <template x-if="spxUploadResult && spxUploadResult.error">
+              <div class="alert alert-danger">✗ <span x-text="spxUploadResult.error"></span></div>
+            </template>
+          </div>
+          <button x-show="spxUploadResult" @click="spxUploadResult = null" class="btn" style="margin-top:.5rem;">清除结果</button>
+        </div>
+      </section>
+
+      <!-- SPX-LOOKUP TAB -->
+      <section x-show="tab==='spx-lookup'" x-cloak>
+        <div class="panel" style="margin-bottom:1rem;">
+          <h2 style="margin:0 0 .75rem; font-size:1.1rem;">🔍 运单查询</h2>
+          <div class="input-row" style="margin-bottom:.75rem;">
+            <input type="text" x-model="spxLookupTracking" placeholder="输入运单号" @keydown.enter="lookupSpxTracking()" />
+            <button class="btn btn-primary" @click="lookupSpxTracking()">查询</button>
+          </div>
+          <div x-show="spxLookupResult && !spxLookupResult.error">
+            <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
+              运单号: <b x-text="spxLookupResult.tracking_no"></b>
+              · 创建时间: <b x-text="spxLookupResult.create_time"></b>
+            </div>
+            <table class="def-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>数量</th>
+                  <th>员工仓位</th>
+                  <th>我们的仓位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(item, idx) in (spxLookupResult.items || [])" :key="idx">
+                  <tr>
+                    <td class="mono" x-text="item.sku"></td>
+                    <td class="mono" x-text="item.qty"></td>
+                    <td class="mono" x-text="item.employee_location || '—'"></td>
+                    <td>
+                      <span x-show="item.our_location" class="mono" x-text="item.our_location"></span>
+                      <span x-show="!item.our_location" style="color:var(--red); font-size:.8rem;">无库存</span>
+                    </td>
+                  </tr>
+                </template>
+                <template x-if="!(spxLookupResult.items && spxLookupResult.items.length)">
+                  <tr><td colspan="4" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div x-show="spxLookupResult && spxLookupResult.error">
+            <div class="alert alert-danger">✗ <span x-text="spxLookupResult.error"></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SPX-PICK TAB -->
+      <section x-show="tab==='spx-pick'" x-cloak>
+        <div class="panel" style="margin-bottom:1rem;">
+          <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📋 拣货单</h2>
+          <div class="input-row" style="margin-bottom:.75rem; gap:.5rem;">
+            <input type="date" x-model="spxPickDate" />
+            <button class="btn btn-primary" @click="loadPickList()">生成拣货单</button>
+            <button class="btn" @click="spxPickDate = kltToday()">今天</button>
+          </div>
+          <div x-show="spxPickResult && !spxPickResult.error">
+            <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
+              日期: <b x-text="spxPickResult.date"></b>
+              · 总计: <b x-text="spxPickResult.total"></b> 条
+            </div>
+            <table class="def-table">
+              <thead>
+                <tr>
+                  <th>运单号</th>
+                  <th>创建时间</th>
+                  <th>SKU</th>
+                  <th>数量</th>
+                  <th>我们的仓位</th>
+                  <th>员工仓位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="(item, idx) in (spxPickResult.items || [])" :key="idx">
+                  <tr>
+                    <td class="mono" x-text="item.tracking_no"></td>
+                    <td class="mono" x-text="item.create_time"></td>
+                    <td class="mono" x-text="item.sku"></td>
+                    <td class="mono" x-text="item.qty"></td>
+                    <td class="mono" x-text="item.our_location || '—'"></td>
+                    <td class="mono" x-text="item.employee_location || '—'"></td>
+                  </tr>
+                </template>
+                <template x-if="!(spxPickResult.items && spxPickResult.items.length)">
+                  <tr><td colspan="6" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div x-show="spxPickResult && spxPickResult.error">
+            <div class="alert alert-danger">✗ <span x-text="spxPickResult.error"></span></div>
+          </div>
+        </div>
+      </section>
+
   <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
   <div x-show="bulkPartsOpen" x-cloak class="modal-back" @click.self="closeBulkParts()" @keydown.escape.window="closeBulkParts()">
     <div class="modal-card" style="max-width:32rem;">
@@ -2822,6 +2960,9 @@ function app() {
         // default the date picker to today in Asia/Kuala_Lumpur
         if (!this.purchaseDate) this.purchaseDate = this.kltToday();
       }
+      else if (name === 'spx-pick') {
+        if (!this.spxPickDate) this.spxPickDate = this.kltToday();
+      }
     },
 
     /* ========================================================
@@ -2832,6 +2973,11 @@ function app() {
     purchaseResult: '',
     purchaseOk: false,
     purchaseSummary: null,
+    spxUploadResult: null,
+    spxLookupResult: null,
+    spxPickResult: null,
+    spxLookupTracking: '',
+    spxPickDate: '',
 
     kltToday() {
       // Asia/Kuala_Lumpur (UTC+8) “today” as YYYY-MM-DD string
@@ -2861,6 +3007,48 @@ function app() {
         this.purchaseSummary = null;
         this.purchaseOk = false;
         this.purchaseResult = '✗ ' + (e.message || '汇总失败');
+      }
+    },
+
+    async uploadSpxFile(ev) {
+      const file = ev.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const r = await fetch('/api/spx/upload', { method: 'POST', body: fd, credentials: 'include' });
+        const data = await r.json();
+        this.spxUploadResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
+      } catch(e) {
+        this.spxUploadResult = { error: e.message };
+      }
+    },
+
+    async lookupSpxTracking() {
+      const tn = this.spxLookupTracking.trim();
+      if (!tn) return;
+      try {
+        const r = await fetch(`/api/spx/lookup/${encodeURIComponent(tn)}`, { credentials: 'include' });
+        if (!r.ok) {
+          const d = await r.json();
+          this.spxLookupResult = { error: d.detail || ('HTTP ' + r.status) };
+          return;
+        }
+        const data = await r.json();
+        this.spxLookupResult = data;
+      } catch(e) {
+        this.spxLookupResult = { error: e.message };
+      }
+    },
+
+    async loadPickList() {
+      const date = this.spxPickDate || this.kltToday();
+      try {
+        const r = await fetch(`/api/spx/pick-list?date_str=${date}`, { credentials: 'include' });
+        const data = await r.json();
+        this.spxPickResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
+      } catch(e) {
+        this.spxPickResult = { error: e.message };
       }
     },
 
