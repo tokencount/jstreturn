@@ -582,27 +582,3 @@ async def pick_list(
         items=items_out,
         total=len(items_out),
     )
-
-
-@router.delete("/uploads/today")
-async def clear_today_uploads(
-    user: dict = Depends(require_role("admin")),
-):
-    """Delete only SPX shipments uploaded during today's Malaysia date."""
-    await ensure_spx_table()
-    today = datetime.now(KLT).date()
-    start = datetime.combine(today, time.min, tzinfo=KLT)
-    end = start + timedelta(days=1)
-    async with pool().acquire() as conn:
-        rows = await conn.fetch(
-            """DELETE FROM spx_shipments
-               WHERE uploaded_at >= $1 AND uploaded_at < $2
-               RETURNING tracking_no""",
-            start, end,
-        )
-    return {
-        "ok": True,
-        "date": today.isoformat(),
-        "deleted_count": len(rows),
-        "tracking_nos": [row["tracking_no"] for row in rows],
-    }

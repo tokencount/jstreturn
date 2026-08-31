@@ -149,12 +149,6 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("resolve_parts_sku_details", source)
         self.assertIn('or "无库存"', source)
 
-    def test_clear_today_uploads_is_admin_only_and_filters_uploaded_at(self):
-        source = inspect.getsource(spx.clear_today_uploads)
-        self.assertIn('require_role("admin")', source)
-        self.assertIn("DELETE FROM spx_shipments", source)
-        self.assertIn("uploaded_at >= $1 AND uploaded_at < $2", source)
-
     def test_all_sku_catalogue_is_separate_from_parts_inventory(self):
         source = Path(spx.__file__).read_text(encoding="utf-8")
         self.assertIn("spx_all_sku_inventory", source)
