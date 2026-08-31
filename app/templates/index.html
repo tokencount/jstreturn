@@ -1209,6 +1209,27 @@
          leave room for it (mobile-filter-bar height + safe-bottom). */
       .pager { margin-bottom: calc(var(--mobile-bar-height) + var(--safe-bottom) + .5rem); }
     }
+    @page { size: A4 portrait; margin: 12mm; }
+    @media print {
+      body { background: #fff; }
+      body * { visibility: hidden !important; }
+      .spx-pick-print-area,
+      .spx-pick-print-area * { visibility: visible !important; }
+      .spx-pick-print-area {
+        position: absolute;
+        inset: 0 auto auto 0;
+        width: 100%;
+        margin: 0 !important;
+        color: #000;
+      }
+      .spx-pick-print-area .no-print { display: none !important; }
+      .spx-pick-print-area table { width: 100%; font-size: 10pt; }
+      .spx-pick-print-area thead { display: table-header-group; }
+      .spx-pick-print-area tr { break-inside: avoid; page-break-inside: avoid; }
+      .spx-pick-print-area th,
+      .spx-pick-print-area td { padding: 6px 8px; border-color: #999; }
+      .spx-pick-print-area h3 { font-size: 16pt !important; }
+    }
   </style>
 </head>
 <body>
@@ -2325,15 +2346,19 @@
               </tbody>
             </table>
 
-            <div x-show="spxPickGenerated" style="margin-top:1rem;">
-              <h3 style="margin:0 0 .5rem;">拣货单 · SKU 汇总</h3>
+            <div x-show="spxPickGenerated" class="spx-pick-print-area" style="margin-top:1rem;">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:.5rem;">
+                <h3 style="margin:0;">拣货单 · SKU 汇总</h3>
+                <button class="btn btn-primary no-print" @click="window.print()">打印 A4</button>
+              </div>
               <div style="font-size:.85rem; color:var(--fg-2); margin-bottom:.5rem;">
+                日期 <b x-text="spxPickResult.date"></b> ·
                 已选择 <b x-text="spxSelectedTrackings.length"></b> 个运单 ·
                 SKU <b x-text="spxPickSummaryRows.length"></b> 种 ·
                 总数量 <b x-text="spxPickSummaryRows.reduce((sum,row) => sum + row.qty, 0)"></b>
               </div>
               <table class="def-table">
-                <thead><tr><th>SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th><th>操作</th></tr></thead>
+                <thead><tr><th>SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th><th class="no-print">操作</th></tr></thead>
                 <tbody>
                   <template x-for="row in spxPickSummaryRows" :key="row.sku">
                     <tr>
@@ -2341,7 +2366,7 @@
                       <td class="mono" x-text="row.qty"></td>
                       <td class="mono" x-text="row.locations || '—'"></td>
                       <td class="mono" x-text="row.tracking_count"></td>
-                      <td><button class="btn" @click="removeSpxPickSku(row.sku)">移除</button></td>
+                      <td class="no-print"><button class="btn" @click="removeSpxPickSku(row.sku)">移除</button></td>
                     </tr>
                   </template>
                 </tbody>
