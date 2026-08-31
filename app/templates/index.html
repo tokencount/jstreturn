@@ -1293,25 +1293,12 @@
           </svg>
           采购导出
         </button>
-        <button x-show="user && user.role==='admin'" @click="goTab('spx-upload')" :class="tab==='spx-upload' && 'active'" class="nav-btn" role="tab">
+        <button x-show="user && ['admin','repair'].includes(user.role)" @click="goTab('spx')" :class="tab==='spx' && 'active'" class="nav-btn" role="tab">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 3v14M6 11l6 6 6-6"/>
-            <path d="M5 21h14"/>
+            <path d="M4 7h16v12H4z"/>
+            <path d="M8 7V4h8v3M8 12h8M8 16h5"/>
           </svg>
-          发货上传
-        </button>
-        <button x-show="user && ['admin','repair'].includes(user.role)" @click="goTab('spx-lookup')" :class="tab==='spx-lookup' && 'active'" class="nav-btn" role="tab">
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="11" cy="11" r="7"/>
-            <path d="m21 21-4.35-4.35"/>
-          </svg>
-          运单查询
-        </button>
-        <button x-show="user && user.role==='admin'" @click="goTab('spx-pick')" :class="tab==='spx-pick' && 'active'" class="nav-btn" role="tab">
-          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 7h18M3 12h18M3 17h18"/>
-          </svg>
-          拣货单
+          SPX
         </button>
       </nav>
 
@@ -2191,8 +2178,16 @@
         </p>
       </section>
 
-      <!-- SPX-UPLOAD TAB -->
-      <section x-show="tab==='spx-upload'" x-cloak>
+      <!-- SPX TAB -->
+      <section x-show="tab==='spx'" x-cloak>
+        <div class="panel" style="margin-bottom:1rem; padding:.65rem; display:flex; gap:.5rem; flex-wrap:wrap;">
+          <button x-show="user && user.role==='admin'" @click="spxView='upload'" :class="spxView==='upload' ? 'btn btn-primary' : 'btn'">发货上传</button>
+          <button @click="spxView='lookup'" :class="spxView==='lookup' ? 'btn btn-primary' : 'btn'">运单查询</button>
+          <button x-show="user && user.role==='admin'" @click="spxView='pick'; if (!spxPickDate) spxPickDate=kltToday()" :class="spxView==='pick' ? 'btn btn-primary' : 'btn'">拣货单</button>
+        </div>
+
+      <!-- SPX-UPLOAD VIEW -->
+      <div x-show="spxView==='upload' && user && user.role==='admin'">
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📤 发货上传</h2>
           <p style="margin:0 0 1rem; font-size:.85rem; color:var(--fg-2);">上传 .xlsx 格式的运单文件（admin only）</p>
@@ -2213,10 +2208,10 @@
           </div>
           <button x-show="spxUploadResult" @click="spxUploadResult = null" class="btn" style="margin-top:.5rem;">清除结果</button>
         </div>
-      </section>
+      </div>
 
-      <!-- SPX-LOOKUP TAB -->
-      <section x-show="tab==='spx-lookup'" x-cloak>
+      <!-- SPX-LOOKUP VIEW -->
+      <div x-show="spxView==='lookup'">
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">🔍 运单查询</h2>
           <div class="input-row" style="margin-bottom:.75rem;">
@@ -2259,10 +2254,10 @@
             <div class="alert alert-danger">✗ <span x-text="spxLookupResult.error"></span></div>
           </div>
         </div>
-      </section>
+      </div>
 
-      <!-- SPX-PICK TAB -->
-      <section x-show="tab==='spx-pick'" x-cloak>
+      <!-- SPX-PICK VIEW -->
+      <div x-show="spxView==='pick' && user && user.role==='admin'">
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📋 拣货单</h2>
           <div class="input-row" style="margin-bottom:.75rem; gap:.5rem;">
@@ -2307,6 +2302,7 @@
             <div class="alert alert-danger">✗ <span x-text="spxPickResult.error"></span></div>
           </div>
         </div>
+      </div>
       </section>
 
   <!-- Bulk-parts modal: paste many codes at once for the active ticket -->
@@ -2960,7 +2956,8 @@ function app() {
         // default the date picker to today in Asia/Kuala_Lumpur
         if (!this.purchaseDate) this.purchaseDate = this.kltToday();
       }
-      else if (name === 'spx-pick') {
+      else if (name === 'spx') {
+        this.spxView = this.user && this.user.role === 'admin' ? 'upload' : 'lookup';
         if (!this.spxPickDate) this.spxPickDate = this.kltToday();
       }
     },
@@ -2978,6 +2975,7 @@ function app() {
     spxPickResult: null,
     spxLookupTracking: '',
     spxPickDate: '',
+    spxView: 'lookup',
 
     kltToday() {
       // Asia/Kuala_Lumpur (UTC+8) “today” as YYYY-MM-DD string

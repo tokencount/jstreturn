@@ -81,8 +81,12 @@ class SpxContractTests(unittest.TestCase):
 
     def test_ui_contains_buttons_sections_and_http_error_handling(self):
         html = (Path(__file__).parents[1] / "app/templates/index.html").read_text(encoding="utf-8")
-        for marker in ("spx-upload", "spx-lookup", "spx-pick", "发货上传", "运单查询", "拣货单"):
+        for marker in ("tab==='spx'", "spxView", "发货上传", "运单查询", "拣货单"):
             self.assertIn(marker, html)
+        self.assertEqual(html.count("@click=\"goTab('spx')\""), 1)
+        self.assertNotIn("goTab('spx-upload')", html)
+        self.assertNotIn("goTab('spx-lookup')", html)
+        self.assertNotIn("goTab('spx-pick')", html)
         self.assertIn("this.spxUploadResult = r.ok ? data", html)
         self.assertIn("this.spxPickResult = r.ok ? data", html)
 
