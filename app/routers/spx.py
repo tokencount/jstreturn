@@ -509,7 +509,7 @@ async def lookup_tracking(
             parts_sku = await resolve_parts_sku_details(conn, sku)
             our_loc = ((all_sku or {}).get("location")
                        or (parts_sku or {}).get("location")
-                       or item.get("employee_location", ""))
+                       or "无库存")
             items_out.append(ShipmentItemOut(
                 sku=sku,
                 qty=item.get("qty", 1),

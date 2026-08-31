@@ -138,6 +138,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("resolve_all_sku_details", source)
         self.assertIn("resolve_parts_sku_details", source)
         self.assertIn("image_url", source)
+        self.assertIn('or "无库存"', source)
 
     def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):
         source = inspect.getsource(spx.pick_list)
