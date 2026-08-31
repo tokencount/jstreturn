@@ -122,6 +122,11 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("['admin','returns'].includes(user.role)", html)
         self.assertIn("this.spxUploadResult = r.ok ? data", html)
         self.assertIn("this.spxPickResult = r.ok ? data", html)
+        self.assertIn("查询全部", html)
+        self.assertIn("spxSelectedTrackings", html)
+        self.assertIn("generateSpxPickSummary()", html)
+        self.assertIn("拣货单 · SKU 汇总", html)
+        self.assertIn("数量总和", html)
 
 
 if __name__ == "__main__":
