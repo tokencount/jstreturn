@@ -2184,6 +2184,7 @@
           <button x-show="user && ['admin','returns'].includes(user.role)" @click="spxView='upload'" :class="spxView==='upload' ? 'btn btn-primary' : 'btn'">发货上传</button>
           <button @click="spxView='lookup'" :class="spxView==='lookup' ? 'btn btn-primary' : 'btn'">运单查询</button>
           <button x-show="user && user.role==='admin'" @click="spxView='pick'; if (!spxPickDate) spxPickDate=kltToday()" :class="spxView==='pick' ? 'btn btn-primary' : 'btn'">拣货单</button>
+          <button x-show="user && ['admin','repair'].includes(user.role)" @click="spxView='all-sku'; loadAllSku()" :class="spxView==='all-sku' ? 'btn btn-primary' : 'btn'">All SKU 库存</button>
         </div>
 
       <!-- SPX-UPLOAD VIEW -->
@@ -2207,6 +2208,31 @@
             </template>
           </div>
           <button x-show="spxUploadResult" @click="spxUploadResult = null" class="btn" style="margin-top:.5rem;">清除结果</button>
+        </div>
+      </div>
+
+      <!-- SPX ALL-SKU VIEW (separate from parts inventory) -->
+      <div x-show="spxView==='all-sku' && user && ['admin','repair'].includes(user.role)">
+        <div class="panel" style="margin-bottom:1rem;">
+          <h2 style="margin:0 0 .75rem; font-size:1.1rem;">All SKU 库存</h2>
+          <div class="input-row" style="margin-bottom:.75rem;">
+            <input type="text" x-model="spxAllSkuQuery" placeholder="搜索 SKU 或仓位" @keydown.enter="loadAllSku()" />
+            <button class="btn btn-primary" @click="loadAllSku()">查询</button>
+          </div>
+          <div style="font-size:.85rem; color:var(--fg-2); margin-bottom:.5rem;">共 <b x-text="spxAllSkuCount"></b> 个新货 SKU</div>
+          <table class="def-table">
+            <thead><tr><th>照片</th><th>SKU</th><th>仓位</th></tr></thead>
+            <tbody>
+              <template x-for="row in spxAllSkuRows" :key="row.sku">
+                <tr>
+                  <td><img x-show="row.image_url" :src="row.image_url" referrerpolicy="no-referrer" style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white;" /></td>
+                  <td class="mono" x-text="row.sku"></td>
+                  <td class="mono" x-text="row.location || '—'"></td>
+                </tr>
+              </template>
+              <template x-if="!spxAllSkuRows.length"><tr><td colspan="3" style="text-align:center; color:var(--fg-3);">暂无数据</td></tr></template>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -3003,6 +3029,9 @@ function app() {
     spxSelectedTrackings: [],
     spxPickSummaryRows: [],
     spxPickGenerated: false,
+    spxAllSkuRows: [],
+    spxAllSkuCount: 0,
+    spxAllSkuQuery: '',
 
     kltToday() {
       // Asia/Kuala_Lumpur (UTC+8) “today” as YYYY-MM-DD string
@@ -3063,6 +3092,19 @@ function app() {
         this.spxLookupResult = data;
       } catch(e) {
         this.spxLookupResult = { error: e.message };
+      }
+    },
+
+    async loadAllSku() {
+      try {
+        const r = await fetch(`/api/spx/all-sku?q=${encodeURIComponent(this.spxAllSkuQuery || '')}&limit=1000`, { credentials: 'include' });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+        this.spxAllSkuRows = data.items || [];
+        this.spxAllSkuCount = data.count || 0;
+      } catch (e) {
+        this.spxAllSkuRows = [];
+        this.spxAllSkuCount = 0;
       }
     },
 

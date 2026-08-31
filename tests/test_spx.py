@@ -110,6 +110,13 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("AND uploaded_at < $2", source)
         self.assertIn("decode_items_json", source)
 
+    def test_all_sku_catalogue_is_separate_from_parts_inventory(self):
+        source = Path(spx.__file__).read_text(encoding="utf-8")
+        self.assertIn("spx_all_sku_inventory", source)
+        import_source = inspect.getsource(spx.import_all_sku)
+        self.assertNotIn("inventory_snapshot", import_source)
+        self.assertIn('require_role("admin")', import_source)
+
     def test_ui_contains_buttons_sections_and_http_error_handling(self):
         html = (Path(__file__).parents[1] / "app/templates/index.html").read_text(encoding="utf-8")
         for marker in ("tab==='spx'", "spxView", "发货上传", "运单查询", "拣货单"):
@@ -135,6 +142,9 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("removeSpxPickSku(row.sku)", html)
         self.assertIn("removeSpxPickSku(sku)", html)
         self.assertIn("row.sku !== sku", html)
+        self.assertIn("All SKU 库存", html)
+        self.assertIn("照片</th><th>SKU</th><th>仓位", html)
+        self.assertIn("/api/spx/all-sku", html)
 
 
 if __name__ == "__main__":

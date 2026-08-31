@@ -17,7 +17,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 import openpyxl
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -275,6 +275,16 @@ class PickListOut(BaseModel):
     total: int
 
 
+class AllSkuRow(BaseModel):
+    sku: str
+    location: str
+    image_url: str = ""
+
+
+class AllSkuImport(BaseModel):
+    rows: list[AllSkuRow]
+
+
 # ---------------------------------------------------------------------------
 # DB: create table if not exists
 # ---------------------------------------------------------------------------
@@ -292,10 +302,76 @@ CREATE INDEX IF NOT EXISTS idx_spx_tracking ON public.spx_shipments (tracking_no
 CREATE INDEX IF NOT EXISTS idx_spx_uploaded ON public.spx_shipments (uploaded_at);
 """
 
+ALL_SKU_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS public.spx_all_sku_inventory (
+    sku         TEXT PRIMARY KEY,
+    location    TEXT NOT NULL,
+    image_url   TEXT NOT NULL DEFAULT '',
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_spx_all_sku_location ON public.spx_all_sku_inventory (location);
+"""
+
 
 async def ensure_spx_table():
     async with pool().acquire() as conn:
         await conn.execute(SPX_TABLE_SQL)
+
+
+async def ensure_all_sku_table():
+    async with pool().acquire() as conn:
+        await conn.execute(ALL_SKU_TABLE_SQL)
+
+
+@router.post("/all-sku/import")
+async def import_all_sku(
+    payload: AllSkuImport = Body(...),
+    user: dict = Depends(require_role("admin")),
+):
+    """Atomically replace the separate new-goods SKU/location catalogue."""
+    normalized = {}
+    for row in payload.rows:
+        sku = row.sku.strip()
+        location = row.location.strip()
+        if sku and location:
+            normalized[sku] = (location, row.image_url.strip())
+    if not normalized:
+        raise HTTPException(400, "all-SKU import is empty")
+    await ensure_all_sku_table()
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("DELETE FROM spx_all_sku_inventory")
+            await conn.executemany(
+                "INSERT INTO spx_all_sku_inventory (sku, location, image_url) VALUES ($1, $2, $3)",
+                [(sku, loc, image) for sku, (loc, image) in normalized.items()],
+            )
+    return {"ok": True, "count": len(normalized)}
+
+
+@router.get("/all-sku")
+async def list_all_sku(
+    q: str = "",
+    limit: int = Query(200, ge=1, le=1000),
+    user: dict = Depends(require_role("admin", "repair")),
+):
+    await ensure_all_sku_table()
+    term = q.strip()
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT sku, location, image_url, updated_at
+            FROM spx_all_sku_inventory
+            WHERE ($1 = '' OR sku ILIKE '%' || $1 || '%' OR location ILIKE '%' || $1 || '%')
+            ORDER BY sku
+            LIMIT $2
+            """,
+            term, limit,
+        )
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM spx_all_sku_inventory WHERE ($1 = '' OR sku ILIKE '%' || $1 || '%' OR location ILIKE '%' || $1 || '%')",
+            term,
+        )
+    return {"count": int(total or 0), "items": [dict(row) for row in rows]}
 
 
 # ---------------------------------------------------------------------------
