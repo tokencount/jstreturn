@@ -74,6 +74,11 @@ class SpxContractTests(unittest.TestCase):
         source = Path(spx.__file__).read_text(encoding="utf-8")
         self.assertIn("json.dumps(items_json, ensure_ascii=False)", source)
 
+    def test_all_database_routes_initialize_the_spx_table(self):
+        self.assertIn("await ensure_spx_table()", inspect.getsource(spx.upload_spx))
+        self.assertIn("await ensure_spx_table()", inspect.getsource(spx.lookup_tracking))
+        self.assertIn("await ensure_spx_table()", inspect.getsource(spx.pick_list))
+
     def test_ui_contains_buttons_sections_and_http_error_handling(self):
         html = (Path(__file__).parents[1] / "app/templates/index.html").read_text(encoding="utf-8")
         for marker in ("spx-upload", "spx-lookup", "spx-pick", "发货上传", "运单查询", "拣货单"):

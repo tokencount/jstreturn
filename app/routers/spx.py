@@ -326,6 +326,7 @@ async def lookup_tracking(
 ):
     """Scan a Tracking No. → return SKUs, our location, employee location."""
 
+    await ensure_spx_table()
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
             "SELECT tracking_no, create_time, items_json FROM spx_shipments WHERE tracking_no = $1",
@@ -366,6 +367,7 @@ async def pick_list(
     except ValueError:
         raise HTTPException(400, "date_str must be YYYY-MM-DD")
 
+    await ensure_spx_table()
     start = datetime.combine(target_date, datetime.min.time())
     end   = datetime.combine(target_date, datetime.max.time())
 
