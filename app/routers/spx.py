@@ -226,6 +226,41 @@ def _col(ws, name: str) -> int:
         return -1
 
 
+def _normalize_header(value) -> str:
+    """Normalize exported Excel headers for reliable matching."""
+    return re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", str(value or "").strip().lower())
+
+
+SPX_HEADER_ALIASES = {
+    "tracking": {
+        "trackingno", "trackingnumber", "trackingid", "awb", "awbno",
+        "运单号", "物流单号", "追踪号",
+    },
+    "parcel": {
+        "iteminparcel", "itemsinparcel", "itemlist", "sku", "skulist",
+        "包裹商品", "包裹内商品", "商品sku", "商品",
+    },
+    "create_time": {
+        "createtime", "createdtime", "ordertime", "下单时间", "创建时间",
+    },
+}
+
+
+def _find_spx_header(ws) -> tuple[int, dict[str, Optional[int]]] | None:
+    """Find a usable SPX header row, tolerating titles and header variants."""
+    for row_number, row in enumerate(
+        ws.iter_rows(min_row=1, max_row=min(ws.max_row, 50), values_only=True), start=1
+    ):
+        normalized = [_normalize_header(value) for value in row]
+        found = {
+            key: next((i for i, value in enumerate(normalized) if value in aliases), None)
+            for key, aliases in SPX_HEADER_ALIASES.items()
+        }
+        if found["tracking"] is not None and found["parcel"] is not None:
+            return row_number, found
+    return None
+
+
 def parse_spx_xlsx(raw: bytes) -> list[dict]:
     """Parse SPX Excel workbook → list of shipment dicts.
 
@@ -235,30 +270,19 @@ def parse_spx_xlsx(raw: bytes) -> list[dict]:
     """
     wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     try:
-        ws = wb.worksheets[0]
-        # Find the first row that actually contains the required headers. SPX
-        # exports may place a report-title row above the table header.
-        col_map = {}
-        header_row_number = None
-        expected = ["Tracking No.", "Item in Parcel", "Create Time"]
-        for row_number, row in enumerate(
-            ws.iter_rows(min_row=1, max_row=10, values_only=True), start=1
-        ):
-            headers = [str(v).strip() if v is not None else "" for v in row]
-            found = {
-                name: next((i for i, value in enumerate(headers) if value.lower() == name.lower()), None)
-                for name in expected
-            }
-            if found["Tracking No."] is not None and found["Item in Parcel"] is not None:
-                col_map = found
-                header_row_number = row_number
-                break
-        if header_row_number is None:
-            raise ValueError("required SPX columns not found")
+        selected = next(
+            ((ws, match) for ws in wb.worksheets if (match := _find_spx_header(ws)) is not None),
+            None,
+        )
+        if selected is None:
+            raise ValueError(
+                "required SPX columns not found: need Tracking No. and Item in Parcel/SKU"
+            )
+        ws, (header_row_number, col_map) = selected
 
-        tracking_col = col_map["Tracking No."]
-        parcel_col = col_map["Item in Parcel"]
-        time_col = col_map.get("Create Time")
+        tracking_col = col_map["tracking"]
+        parcel_col = col_map["parcel"]
+        time_col = col_map.get("create_time")
 
         rows = []
         for row in ws.iter_rows(min_row=header_row_number + 1, values_only=True):

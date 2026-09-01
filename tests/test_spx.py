@@ -44,6 +44,33 @@ class SpxParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "required SPX columns"):
             spx.parse_spx_xlsx(raw)
 
+    def test_parser_accepts_common_header_variants_and_whitespace(self):
+        raw = self._workbook([
+            ["Tracking\nNumber", "Created Time", "SKU List"],
+            ["SPX002", "2026-09-01 14:00:00", "ABC*2"],
+        ])
+        self.assertEqual(spx.parse_spx_xlsx(raw)[0]["items"], [("ABC", 2, "")])
+
+    def test_parser_finds_headers_below_row_ten(self):
+        rows = [[f"report title {i}"] for i in range(12)]
+        rows.extend([
+            ["AWB No", "创建时间", "商品 SKU"],
+            ["SPX003", "2026-09-01 14:00:00", "XYZ"],
+        ])
+        self.assertEqual(spx.parse_spx_xlsx(self._workbook(rows))[0]["tracking_no"], "SPX003")
+
+    def test_parser_finds_data_sheet_when_first_sheet_is_cover(self):
+        wb = openpyxl.Workbook()
+        wb.active.append(["SPX cover"])
+        ws = wb.create_sheet("Data")
+        ws.append(["运单号", "创建时间", "包裹内商品"])
+        ws.append(["SPX004", "2026-09-01 14:00:00", "SKU9*3"])
+        stream = io.BytesIO()
+        wb.save(stream)
+        wb.close()
+        parsed = spx.parse_spx_xlsx(stream.getvalue())
+        self.assertEqual(parsed[0]["items"], [("SKU9", 3, "")])
+
     def test_decode_items_json_accepts_asyncpg_string(self):
         self.assertEqual(
             spx.decode_items_json('[{"sku":"ABC","qty":2}]'),
