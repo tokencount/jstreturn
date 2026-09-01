@@ -249,7 +249,7 @@ SPX_HEADER_ALIASES = {
 def _find_spx_header(ws) -> tuple[int, dict[str, Optional[int]]] | None:
     """Find a usable SPX header row, tolerating titles and header variants."""
     for row_number, row in enumerate(
-        ws.iter_rows(min_row=1, max_row=min(ws.max_row, 50), values_only=True), start=1
+        ws.iter_rows(min_row=1, max_row=50, values_only=True), start=1
     ):
         normalized = [_normalize_header(value) for value in row]
         found = {
@@ -269,10 +269,10 @@ def _find_fixed_layout_start(ws) -> Optional[int]:
     item in parcel=29). Use that layout only when both required data cells
     are populated, so unrelated workbooks are not silently accepted.
     """
-    if ws.max_column <= COL_ITEM_IN_PARCEL:
+    if ws.max_column is not None and ws.max_column <= COL_ITEM_IN_PARCEL:
         return None
     for row_number, row in enumerate(
-        ws.iter_rows(min_row=1, max_row=min(ws.max_row, 100), values_only=True), start=1
+        ws.iter_rows(min_row=1, max_row=100, values_only=True), start=1
     ):
         if len(row) <= COL_ITEM_IN_PARCEL:
             continue
@@ -300,6 +300,12 @@ def parse_spx_xlsx(raw: bytes) -> list[dict]:
     """
     wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
     try:
+        # Some SPX exports contain a broken worksheet dimension of A1:A1 even
+        # though the XML contains the full table. In read-only mode openpyxl
+        # trusts that marker and otherwise exposes only the first cell.
+        for sheet in wb.worksheets:
+            if sheet.max_row == 1 and sheet.max_column == 1:
+                sheet.reset_dimensions()
         selected = next(
             ((ws, match) for ws in wb.worksheets if (match := _find_spx_header(ws)) is not None),
             None,

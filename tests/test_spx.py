@@ -3,7 +3,9 @@ import hashlib
 import inspect
 import io
 import json
+import re
 import unittest
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -82,6 +84,29 @@ class SpxParserTests(unittest.TestCase):
         row[28] = "ABC*2"
         parsed = spx.parse_spx_xlsx(self._workbook([header, row]))
         self.assertEqual(parsed[0]["tracking_no"], "SPX005")
+        self.assertEqual(parsed[0]["items"], [("ABC", 2, "")])
+
+    def test_parser_repairs_broken_a1_worksheet_dimension(self):
+        normal = self._workbook([
+            ["Report Download Time: 2026-08-31 23:55"],
+            ["Tracking No.", "Create Time", "Item in Parcel"],
+            ["SPX006", "2026-09-01 14:00:00", "ABC*2"],
+        ])
+        source = io.BytesIO(normal)
+        repaired = io.BytesIO()
+        with zipfile.ZipFile(source) as src, zipfile.ZipFile(repaired, "w") as dst:
+            for info in src.infolist():
+                data = src.read(info.filename)
+                if info.filename == "xl/worksheets/sheet1.xml":
+                    data = re.sub(
+                        rb'<dimension ref="[^"]+"\s*/>',
+                        b'<dimension ref="A1:A1"/>',
+                        data,
+                        count=1,
+                    )
+                dst.writestr(info, data)
+        parsed = spx.parse_spx_xlsx(repaired.getvalue())
+        self.assertEqual(parsed[0]["tracking_no"], "SPX006")
         self.assertEqual(parsed[0]["items"], [("ABC", 2, "")])
 
     def test_decode_items_json_accepts_asyncpg_string(self):
