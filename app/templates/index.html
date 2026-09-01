@@ -2372,7 +2372,7 @@
               </table>
             </div>
           </div>
-          <div x-show="spxPickResult && spxPickResult.error">
+          <div x-show="spxPickResult?.error">
             <div class="alert alert-danger">✗ <span x-text="spxPickResult?.error"></span></div>
           </div>
         </div>
