@@ -2310,9 +2310,9 @@
           </div>
           <div x-show="spxPickResult && !spxPickResult.error">
             <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
-              日期: <b x-text="spxPickResult.date"></b>
-              · 运单: <b x-text="spxPickShipments().length"></b>
-              · SKU 项目: <b x-text="spxPickResult.total"></b>
+              日期: <b x-text="spxPickResult?.date"></b>
+              · 运单: <b x-text="(spxPickShipments() || []).length"></b>
+              · SKU 项目: <b x-text="spxPickResult?.total"></b>
             </div>
             <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.75rem;">
               <button class="btn" @click="spxSelectedTrackings = spxPickShipments().map(row => row.tracking_no); spxPickGenerated=false">全选</button>
@@ -2351,7 +2351,7 @@
             <div x-show="spxPickGenerated" class="spx-pick-print-area" style="margin-top:1rem;">
               <h3 style="margin:0 0 .5rem;">拣货单 · SKU 汇总</h3>
               <div style="font-size:.85rem; color:var(--fg-2); margin-bottom:.5rem;">
-                日期 <b x-text="spxPickResult.date"></b> ·
+                日期 <b x-text="spxPickResult?.date"></b> ·
                 已选择 <b x-text="spxSelectedTrackings.length"></b> 个运单 ·
                 SKU <b x-text="spxPickSummaryRows.length"></b> 种 ·
                 总数量 <b x-text="spxPickSummaryRows.reduce((sum,row) => sum + row.qty, 0)"></b>
@@ -2373,7 +2373,7 @@
             </div>
           </div>
           <div x-show="spxPickResult && spxPickResult.error">
-            <div class="alert alert-danger">✗ <span x-text="spxPickResult.error"></span></div>
+            <div class="alert alert-danger">✗ <span x-text="spxPickResult?.error"></span></div>
           </div>
         </div>
       </div>
