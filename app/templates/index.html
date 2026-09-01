@@ -1314,7 +1314,7 @@
           </svg>
           采购导出
         </button>
-        <button x-show="user && ['admin','repair','returns'].includes(user.role)" @click="goTab('spx')" :class="tab==='spx' && 'active'" class="nav-btn" role="tab">
+        <button x-show="user && ['admin','repair','returns'].includes(user.role)" @click="goTab('spx')" :class="tab==='spx' && 'active'" class="nav-btn repair-keep" role="tab">
           <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 7h16v12H4z"/>
             <path d="M8 7V4h8v3M8 12h8M8 16h5"/>
