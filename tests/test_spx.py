@@ -71,6 +71,19 @@ class SpxParserTests(unittest.TestCase):
         parsed = spx.parse_spx_xlsx(stream.getvalue())
         self.assertEqual(parsed[0]["items"], [("SKU9", 3, "")])
 
+    def test_parser_uses_official_fixed_columns_when_headers_are_localized(self):
+        header = [""] * 31
+        header[0] = "本地化运单栏"
+        header[4] = "本地化时间栏"
+        header[28] = "本地化包裹栏"
+        row = [""] * 31
+        row[0] = "SPX005"
+        row[4] = "2026-09-01 14:00:00"
+        row[28] = "ABC*2"
+        parsed = spx.parse_spx_xlsx(self._workbook([header, row]))
+        self.assertEqual(parsed[0]["tracking_no"], "SPX005")
+        self.assertEqual(parsed[0]["items"], [("ABC", 2, "")])
+
     def test_decode_items_json_accepts_asyncpg_string(self):
         self.assertEqual(
             spx.decode_items_json('[{"sku":"ABC","qty":2}]'),

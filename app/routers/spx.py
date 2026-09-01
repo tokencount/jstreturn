@@ -261,6 +261,36 @@ def _find_spx_header(ws) -> tuple[int, dict[str, Optional[int]]] | None:
     return None
 
 
+def _find_fixed_layout_start(ws) -> Optional[int]:
+    """Find the first data row in SPX's stable 31-column export layout.
+
+    Some regional SPX exports translate or omit the header labels while
+    retaining the documented column positions (tracking=1, create time=5,
+    item in parcel=29). Use that layout only when both required data cells
+    are populated, so unrelated workbooks are not silently accepted.
+    """
+    if ws.max_column <= COL_ITEM_IN_PARCEL:
+        return None
+    for row_number, row in enumerate(
+        ws.iter_rows(min_row=1, max_row=min(ws.max_row, 100), values_only=True), start=1
+    ):
+        if len(row) <= COL_ITEM_IN_PARCEL:
+            continue
+        tracking = str(row[COL_TRACKING] or "").strip()
+        parcel = str(row[COL_ITEM_IN_PARCEL] or "").strip()
+        normalized_tracking = _normalize_header(tracking)
+        if (
+            tracking
+            and parcel
+            and bool(re.search(r"\d", tracking))
+            and not bool(re.search(r"[\u4e00-\u9fff]", tracking))
+            and normalized_tracking not in SPX_HEADER_ALIASES["tracking"]
+            and normalized_tracking not in {"reportdownloadtime", "报表下载时间"}
+        ):
+            return row_number
+    return None
+
+
 def parse_spx_xlsx(raw: bytes) -> list[dict]:
     """Parse SPX Excel workbook → list of shipment dicts.
 
@@ -274,18 +304,28 @@ def parse_spx_xlsx(raw: bytes) -> list[dict]:
             ((ws, match) for ws in wb.worksheets if (match := _find_spx_header(ws)) is not None),
             None,
         )
-        if selected is None:
-            raise ValueError(
-                "required SPX columns not found: need Tracking No. and Item in Parcel/SKU"
+        if selected is not None:
+            ws, (header_row_number, col_map) = selected
+            data_start_row = header_row_number + 1
+            tracking_col = col_map["tracking"]
+            parcel_col = col_map["parcel"]
+            time_col = col_map.get("create_time")
+        else:
+            fixed = next(
+                ((ws, start) for ws in wb.worksheets if (start := _find_fixed_layout_start(ws)) is not None),
+                None,
             )
-        ws, (header_row_number, col_map) = selected
-
-        tracking_col = col_map["tracking"]
-        parcel_col = col_map["parcel"]
-        time_col = col_map.get("create_time")
+            if fixed is None:
+                raise ValueError(
+                    "required SPX columns not found: need Tracking No. and Item in Parcel/SKU"
+                )
+            ws, data_start_row = fixed
+            tracking_col = COL_TRACKING
+            parcel_col = COL_ITEM_IN_PARCEL
+            time_col = COL_CREATE_TIME
 
         rows = []
-        for row in ws.iter_rows(min_row=header_row_number + 1, values_only=True):
+        for row in ws.iter_rows(min_row=data_start_row, values_only=True):
             if not row or all(v is None for v in row):
                 continue
             tracking = str(row[tracking_col] or "").strip()
