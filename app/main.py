@@ -64,6 +64,9 @@ app.include_router(exports.router)
 app.include_router(cron.router)
 app.include_router(spx.router)
 
+STATIC_DIR = Path(__file__).parent
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
 
 @app.get("/healthz")
 async def healthz():
