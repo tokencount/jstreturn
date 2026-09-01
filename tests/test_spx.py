@@ -120,6 +120,8 @@ class SpxContractTests(unittest.TestCase):
     def test_upload_route_allows_admin_and_returns(self):
         source = inspect.getsource(spx.upload_spx)
         self.assertIn('require_role("admin", "returns")', source)
+        self.assertIn('endswith(".xlsx")', source)
+        self.assertNotIn('".xls"', source)
 
     def test_jsonb_payload_is_serialized(self):
         source = Path(spx.__file__).read_text(encoding="utf-8")
@@ -169,6 +171,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("['admin','repair','returns'].includes(user.role)", html)
         self.assertIn("['admin','returns'].includes(user.role)", html)
         self.assertIn("this.spxUploadResult = r.ok ? data", html)
+        self.assertIn("spxUploadResult: null", html)
+        self.assertIn("ev.target.value = ''", html)
         self.assertIn("this.spxPickResult = r.ok ? data", html)
         self.assertIn("查询全部", html)
         self.assertIn("spxSelectedTrackings", html)

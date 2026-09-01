@@ -3044,7 +3044,7 @@ function app() {
     purchaseResult: '',
     purchaseOk: false,
     purchaseSummary: null,
-    spxUploadResult: {},
+    spxUploadResult: null,
     spxLookupResult: {},
     spxPickResult: {},
     spxLookupTracking: '',
@@ -3091,6 +3091,7 @@ function app() {
     async uploadSpxFile(ev) {
       const file = ev.target.files[0];
       if (!file) return;
+      this.spxUploadResult = null;
       const fd = new FormData();
       fd.append('file', file);
       try {
@@ -3099,6 +3100,8 @@ function app() {
         this.spxUploadResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
       } catch(e) {
         this.spxUploadResult = { error: e.message };
+      } finally {
+        ev.target.value = '';
       }
     },
 

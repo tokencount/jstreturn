@@ -435,8 +435,8 @@ async def upload_spx(
     Parses Tracking No. + Item in Parcel (SKU + employee location),
     saves to spx_shipments table, and returns a summary.
     """
-    if not file.filename.lower().endswith((".xlsx", ".xls")):
-        raise HTTPException(400, "must be .xlsx or .xls")
+    if not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(400, "must be .xlsx")
 
     await ensure_spx_table()
 
