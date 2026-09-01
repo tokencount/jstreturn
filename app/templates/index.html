@@ -2218,13 +2218,13 @@
             <input type="file" x-ref="spxFileInput" accept=".xlsx" @change="uploadSpxFile($event)" style="display:none;" />
           </div>
           <div x-show="spxUploadResult" style="margin-top:.75rem;">
-            <template x-if="spxUploadResult && !spxUploadResult.error">
+            <template x-if="!spxUploadResult?.error">
               <div class="alert alert-ok">
-                ✓ 上传成功 · 总行数: <b x-text="spxUploadResult.total_rows"></b> · 保存: <b x-text="spxUploadResult.saved_rows"></b>
+                ✓ 上传成功 · 总行数: <b x-text="spxUploadResult?.total_rows"></b> · 保存: <b x-text="spxUploadResult?.saved_rows"></b>
               </div>
             </template>
-            <template x-if="spxUploadResult && spxUploadResult.error">
-              <div class="alert alert-danger">✗ <span x-text="spxUploadResult.error"></span></div>
+            <template x-if="spxUploadResult?.error">
+              <div class="alert alert-danger">✗ <span x-text="spxUploadResult?.error"></span></div>
             </template>
           </div>
           <button x-show="spxUploadResult" @click="spxUploadResult = null" class="btn" style="margin-top:.5rem;">清除结果</button>
@@ -2264,10 +2264,10 @@
             <input type="text" x-model="spxLookupTracking" placeholder="输入运单号" @keydown.enter="lookupSpxTracking()" />
             <button class="btn btn-primary" @click="lookupSpxTracking()">查询</button>
           </div>
-          <div x-show="spxLookupResult && !spxLookupResult.error">
+          <div x-show="!spxLookupResult?.error">
             <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
-              运单号: <b x-text="spxLookupResult.tracking_no"></b>
-              · 创建时间: <b x-text="spxLookupResult.create_time"></b>
+              运单号: <b x-text="spxLookupResult?.tracking_no"></b>
+              · 创建时间: <b x-text="spxLookupResult?.create_time"></b>
             </div>
             <table class="def-table">
               <thead>
@@ -2287,14 +2287,14 @@
                     <td class="mono" x-text="item.our_location || item.employee_location || '—'"></td>
                   </tr>
                 </template>
-                <template x-if="!(spxLookupResult.items && spxLookupResult.items.length)">
+                <template x-if="!(spxLookupResult?.items && spxLookupResult?.items.length)">
                   <tr><td colspan="4" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
                 </template>
               </tbody>
             </table>
           </div>
-          <div x-show="spxLookupResult && spxLookupResult.error">
-            <div class="alert alert-danger">✗ <span x-text="spxLookupResult.error"></span></div>
+          <div x-show="spxLookupResult?.error">
+            <div class="alert alert-danger">✗ <span x-text="spxLookupResult?.error"></span></div>
           </div>
         </div>
       </div>
@@ -2308,7 +2308,7 @@
             <button class="btn btn-primary" @click="loadPickList()">查询全部</button>
             <button class="btn" @click="spxPickDate = kltToday()">今天</button>
           </div>
-          <div x-show="spxPickResult && !spxPickResult.error">
+          <div x-show="!spxPickResult?.error">
             <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
               日期: <b x-text="spxPickResult?.date"></b>
               · 运单: <b x-text="(spxPickShipments() || []).length"></b>
@@ -3044,9 +3044,9 @@ function app() {
     purchaseResult: '',
     purchaseOk: false,
     purchaseSummary: null,
-    spxUploadResult: null,
-    spxLookupResult: null,
-    spxPickResult: null,
+    spxUploadResult: {},
+    spxLookupResult: {},
+    spxPickResult: {},
     spxLookupTracking: '',
     spxPickDate: '',
     spxView: 'lookup',
