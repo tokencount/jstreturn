@@ -161,6 +161,8 @@ class SpxContractTests(unittest.TestCase):
         for marker in ("tab==='spx'", "spxView", "发货上传", "运单查询", "拣货单"):
             self.assertIn(marker, html)
         self.assertEqual(html.count("@click=\"goTab('spx')\""), 1)
+        self.assertIn('<section x-show="tab===\'spx\'" x-cloak class="repair-allow">', html)
+        self.assertIn('class="nav-btn repair-keep"', html)
         self.assertNotIn("goTab('spx-upload')", html)
         self.assertNotIn("goTab('spx-lookup')", html)
         self.assertNotIn("goTab('spx-pick')", html)
