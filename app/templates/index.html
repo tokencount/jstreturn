@@ -1540,7 +1540,8 @@
                   <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="stock − reserved">Available</th>
                   <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-short">Missing</th>
                   <th x-show="tab !== 'ready' && tab !== 'pending'">Reason</th>
-                  <th x-show="tab !== 'ready'" class="col-status">Status</th>
+                  <th x-show="tab !== 'ready' && tab !== 'history'" class="col-status">Status</th>
+                  <th x-show="tab === 'history'" class="col-date">Completed</th>
                   <th class="col-actions"></th>
                 </tr>
                 <tr x-show="['ready','pending'].includes(tab)" class="column-filters">
@@ -1559,7 +1560,8 @@
                   <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.available" placeholder="Avail" /></th>
                   <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.missing" placeholder="Miss" /></th>
                   <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.reason" placeholder="Reason" /></th>
-                  <th x-show="tab !== 'ready'"></th>
+                  <th x-show="tab !== 'ready' && tab !== 'history'"></th>
+                  <th x-show="tab === 'history'"></th>
                   <th></th>
                 </tr>
               </thead>
@@ -1610,7 +1612,8 @@
                         }" x-text="row.p.reason || '—'"></span>
                     </td>
                     <td x-show="tab !== 'ready'">
-                      <span x-show="row.pi===0" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
+                      <span x-show="tab !== 'history'" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
+                      <span x-show="tab === 'history' && row.pi===0" class="col-id" style="color:var(--fg-2);" x-text="(row.it.completed_at || '').slice(0,16)"></span>
                     </td>
                     <td>
                       <!-- returns / repair / admin can all edit every status, including COMPLETED -->
