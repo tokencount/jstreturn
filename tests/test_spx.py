@@ -283,6 +283,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("item.our_location || item.employee_location || '—'", html)
         self.assertIn("<th>图片</th>", html)
         self.assertIn("x-show=\"item.image_url\"", html)
+        self.assertIn('@click="openImagePreview({ imageUrl: item.image_url, code: item.sku })"', html)
+        self.assertIn("cursor:zoom-in", html)
         self.assertIn("const location = item.our_location || item.employee_location", html)
         self.assertIn("removeSpxPickSku(row.key)", html)
         self.assertIn("removeSpxPickSku(key)", html)
