@@ -163,6 +163,14 @@ class SpxLocationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(conn.queries, ["ABC-001", "ABC"])
 
+    async def test_original_sku_image_does_not_fallback_to_replacement(self):
+        conn = FakeConnection([{"image_url": "https://img/original.jpg"}])
+        self.assertEqual(
+            await spx.resolve_original_sku_image(conn, "ABC-001"),
+            "https://img/original.jpg",
+        )
+        self.assertEqual(conn.queries, ["ABC-001"])
+
     async def test_parts_sku_details_exact_match(self):
         conn = FakeConnection([{"location": "PART-01", "image_url": "https://img/part.jpg"}])
         self.assertEqual(
@@ -242,6 +250,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("decode_items_json", source)
         self.assertIn("resolve_all_sku_details", source)
         self.assertIn("resolve_parts_sku_details", source)
+        self.assertIn("resolve_original_sku_image", source)
         self.assertIn("image_url", source)
         self.assertIn('matched_sku = await inventory_match_sku(conn, sku)', source)
         self.assertIn('or "无库存"', source)

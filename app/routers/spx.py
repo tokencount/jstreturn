@@ -244,6 +244,23 @@ async def resolve_all_sku_details(conn, sku: str) -> Optional[dict]:
     return None
 
 
+async def resolve_original_sku_image(conn, sku: str) -> str:
+    """Return an image only for the exact order SKU.
+
+    A matched SKU can be a stock replacement, so its image must not be used
+    in shipment lookup: staff need to see the product printed on the waybill.
+    """
+    row = await conn.fetchrow(
+        """SELECT COALESCE(image_url, '') AS image_url
+           FROM inventory_snapshot
+           WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+           ORDER BY on_hand_qty DESC
+           LIMIT 1""",
+        sku,
+    )
+    return str(row["image_url"] or "") if row else ""
+
+
 # ---------------------------------------------------------------------------
 # Excel parser
 # ---------------------------------------------------------------------------
@@ -718,6 +735,7 @@ async def lookup_tracking(
             matched_sku = await inventory_match_sku(conn, sku)
             all_sku = await resolve_all_sku_details(conn, matched_sku)
             parts_sku = await resolve_parts_sku_details(conn, matched_sku)
+            original_image_url = await resolve_original_sku_image(conn, sku)
             our_loc = ((all_sku or {}).get("location")
                        or (parts_sku or {}).get("location")
                        or "无库存")
@@ -727,9 +745,7 @@ async def lookup_tracking(
                 qty=item.get("qty", 1),
                 employee_location=item.get("employee_location", ""),
                 our_location=our_loc,
-                image_url=((all_sku or {}).get("image_url")
-                           or (parts_sku or {}).get("image_url")
-                           or ""),
+                image_url=original_image_url,
             ))
 
     return ShipmentOut(
