@@ -312,9 +312,9 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("spx-pick-print-area", html)
         self.assertIn("@click=\"window.print()\"", html)
         self.assertNotIn("class=\"no-print\">操作", html)
-        self.assertIn("All SKU 库存", html)
-        self.assertIn("照片</th><th>SKU</th><th>库存</th><th>仓位", html)
-        self.assertIn("/api/spx/all-sku", html)
+        self.assertNotIn("All SKU 库存", html)
+        self.assertNotIn("照片</th><th>SKU</th><th>库存</th><th>仓位", html)
+        self.assertNotIn("/api/spx/all-sku", html)
 
 
 if __name__ == "__main__":
