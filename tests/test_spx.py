@@ -134,6 +134,9 @@ class FakeConnection:
 
 
 class SpxLocationTests(unittest.IsolatedAsyncioTestCase):
+    def test_base_sku_strips_alphanumeric_four_char_suffix(self):
+        self.assertEqual(spx.base_sku("ABC-WHT1"), "ABC")
+
     async def test_exact_location_is_awaited_and_returned(self):
         conn = FakeConnection([{"location": "A-01"}])
         self.assertEqual(await spx.resolve_location(conn, "ABC-001"), "A-01")
@@ -189,9 +192,9 @@ class _SkuAvailabilityConnection:
 
 class SpxInventoryMatchSkuTests(unittest.IsolatedAsyncioTestCase):
     async def test_uses_base_only_for_inventory_match(self):
-        conn = _SkuAvailabilityConnection({"ABC-001": False, "ABC": True})
-        self.assertEqual(await spx.inventory_match_sku(conn, "ABC-001"), "ABC")
-        self.assertEqual(conn.queries, ["ABC-001", "ABC"])
+        conn = _SkuAvailabilityConnection({"ABC-WHT1": False, "ABC": True})
+        self.assertEqual(await spx.inventory_match_sku(conn, "ABC-WHT1"), "ABC")
+        self.assertEqual(conn.queries, ["ABC-WHT1", "ABC"])
 
     async def test_keeps_exact_sku_when_available(self):
         conn = _SkuAvailabilityConnection({"ABC-001": True, "ABC": True})

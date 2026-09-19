@@ -32,9 +32,9 @@ KLT = ZoneInfo("Asia/Kuala_Lumpur")
 # SKU parsing helpers
 # ---------------------------------------------------------------------------
 
-# Matches e.g.  ST5822PK-001  → base=ST5822PK, seq=1
-#              ABC-100       → base=ABC, seq=100
-SEQ_PATTERN = re.compile(r"^(.+?)-(\d{1,3})$")
+# Matches an order-variant suffix, e.g. ST5822PK-001 / ST5822PK-WHT1
+# → base=ST5822PK.  The source order suffix is 1–4 alphanumeric characters.
+SEQ_PATTERN = re.compile(r"^(.+?)-([A-Za-z0-9]{1,4})$")
 
 
 def parse_sku(raw: str) -> tuple[str, int]:
@@ -53,7 +53,7 @@ def parse_sku(raw: str) -> tuple[str, int]:
 
 
 def base_sku(sku: str) -> str:
-    """Strip the -001 … -100 suffix; return the base SKU."""
+    """Strip a trailing ``-xxxx`` order-variant suffix; return the base SKU."""
     m = SEQ_PATTERN.match(sku)
     if m:
         return m.group(1)
@@ -72,7 +72,21 @@ async def inventory_match_sku(conn, sku: str) -> str:
     if base == sku:
         return sku
 
-    async def has_inventory(candidate: str) -> bool:
+    async def has_parts_stock(candidate: str) -> bool:
+        """The parts snapshot is the only source with an actual quantity."""
+        return bool(await conn.fetchval(
+            """
+            SELECT EXISTS(
+                SELECT 1 FROM inventory_snapshot
+                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                  AND on_hand_qty > 0
+            )
+            """,
+            candidate,
+        ))
+
+    async def has_base_inventory(candidate: str) -> bool:
+        """A base SKU may resolve from either the stock snapshot or catalogue."""
         return bool(await conn.fetchval(
             """
             SELECT EXISTS(
@@ -87,9 +101,11 @@ async def inventory_match_sku(conn, sku: str) -> str:
             candidate,
         ))
 
-    if await has_inventory(sku):
+    # All-SKU is a location catalogue, not a quantity source.  Do not let an
+    # exact catalogue row suppress the ``-001/-002/-003`` fallback.
+    if await has_parts_stock(sku):
         return sku
-    return base if await has_inventory(base) else sku
+    return base if await has_base_inventory(base) else sku
 
 
 def decode_items_json(value) -> list[dict]:
