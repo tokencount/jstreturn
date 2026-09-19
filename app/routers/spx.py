@@ -536,12 +536,17 @@ async def ensure_spx_table():
         await conn.execute(
             """
             INSERT INTO spx_upload_batches (id, name, uploaded_at)
-            SELECT 'legacy-' || to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYYMMDD'),
-                   '历史批次 ' || to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'),
+            SELECT 'legacy-' || day_key,
+                   '历史批次 ' || day_label,
                    min(uploaded_at)
-            FROM spx_shipments
-            WHERE batch_id IS NULL
-            GROUP BY to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYYMMDD')
+            FROM (
+                SELECT uploaded_at,
+                       to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYYMMDD') AS day_key,
+                       to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD') AS day_label
+                FROM spx_shipments
+                WHERE batch_id IS NULL
+            ) legacy
+            GROUP BY day_key, day_label
             ON CONFLICT (id) DO NOTHING
             """
         )
