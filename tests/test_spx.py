@@ -232,6 +232,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("resolve_all_sku_details", source)
         self.assertIn("resolve_parts_sku_details", source)
         self.assertIn("image_url", source)
+        self.assertIn('item.get("matched_sku") or await inventory_match_sku(conn, sku)', source)
         self.assertIn('or "无库存"', source)
 
     def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):
@@ -241,6 +242,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("decode_items_json", source)
         self.assertIn("resolve_all_sku_details", source)
         self.assertIn("resolve_parts_sku_details", source)
+        self.assertIn('item.get("matched_sku") or await inventory_match_sku(conn, sku)', source)
         self.assertIn('or "无库存"', source)
 
     def test_all_sku_catalogue_is_separate_from_parts_inventory(self):

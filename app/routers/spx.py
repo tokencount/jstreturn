@@ -615,7 +615,9 @@ async def lookup_tracking(
     async with pool().acquire() as conn:
         for item in decode_items_json(row["items_json"]):
             sku = item.get("sku", "")
-            matched_sku = item.get("matched_sku") or sku
+            # Older uploads predate ``matched_sku``. Compute it at read time
+            # so their lookup shows the same replacement SKU as new uploads.
+            matched_sku = item.get("matched_sku") or await inventory_match_sku(conn, sku)
             all_sku = await resolve_all_sku_details(conn, matched_sku)
             parts_sku = await resolve_parts_sku_details(conn, matched_sku)
             our_loc = ((all_sku or {}).get("location")
@@ -675,7 +677,9 @@ async def pick_list(
         for row in rows:
             for item in decode_items_json(row["items_json"]):
                 sku = item.get("sku", "")
-                matched_sku = item.get("matched_sku") or sku
+                # Keep old uploaded waybills compatible with the replacement
+                # SKU view used by the pick list.
+                matched_sku = item.get("matched_sku") or await inventory_match_sku(conn, sku)
                 all_sku = await resolve_all_sku_details(conn, matched_sku)
                 parts_sku = await resolve_parts_sku_details(conn, matched_sku)
                 our_loc = ((all_sku or {}).get("location")
