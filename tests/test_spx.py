@@ -177,6 +177,27 @@ class SpxLocationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conn.queries, ["HS-PART-001", "HS-PART"])
 
 
+class _SkuAvailabilityConnection:
+    def __init__(self, availability):
+        self.availability = availability
+        self.queries = []
+
+    async def fetchval(self, _query, sku):
+        self.queries.append(sku)
+        return self.availability.get(sku, False)
+
+
+class SpxInventoryMatchSkuTests(unittest.IsolatedAsyncioTestCase):
+    async def test_uses_base_only_for_inventory_match(self):
+        conn = _SkuAvailabilityConnection({"ABC-001": False, "ABC": True})
+        self.assertEqual(await spx.inventory_match_sku(conn, "ABC-001"), "ABC")
+        self.assertEqual(conn.queries, ["ABC-001", "ABC"])
+
+    async def test_keeps_exact_sku_when_available(self):
+        conn = _SkuAvailabilityConnection({"ABC-001": True, "ABC": True})
+        self.assertEqual(await spx.inventory_match_sku(conn, "ABC-001"), "ABC-001")
+
+
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
         source = inspect.getsource(spx.lookup_tracking)
@@ -189,7 +210,8 @@ class SpxContractTests(unittest.TestCase):
     def test_upload_keeps_original_order_sku(self):
         """Lookup must retain the precise accessory SKU from the waybill."""
         source = inspect.getsource(spx.upload_spx)
-        self.assertIn('{"sku": sku, "qty": qty, "employee_location": loc}', source)
+        self.assertIn('"sku": sku', source)
+        self.assertIn('"matched_sku": await inventory_match_sku(conn, sku)', source)
         self.assertIn('endswith(".xlsx")', source)
         self.assertNotIn('".xls"', source)
 
@@ -250,6 +272,9 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("拣货单 · SKU 汇总", html)
         self.assertIn("数量总和", html)
         self.assertIn("<th>仓位</th>", html)
+        self.assertIn("<th>原 SKU</th>", html)
+        self.assertIn("<th>匹配 SKU</th>", html)
+        self.assertIn('x-text="item.matched_sku || item.sku"', html)
         self.assertNotIn("我们的仓位", html)
         self.assertNotIn("员工仓位", html)
         self.assertIn("item.our_location || item.employee_location || '—'", html)

@@ -60,6 +60,38 @@ def base_sku(sku: str) -> str:
     return sku
 
 
+async def inventory_match_sku(conn, sku: str) -> str:
+    """Return the SKU used for inventory lookup, preserving the order SKU.
+
+    A suffixed order SKU falls back to its base only when the exact code is
+    unavailable and the base code exists in an inventory source.  Callers
+    store this separately as ``matched_sku``; ``sku`` remains the original
+    accessory/order SKU for traceability.
+    """
+    base = base_sku(sku)
+    if base == sku:
+        return sku
+
+    async def has_inventory(candidate: str) -> bool:
+        return bool(await conn.fetchval(
+            """
+            SELECT EXISTS(
+                SELECT 1 FROM spx_all_sku_inventory
+                WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))
+            ) OR EXISTS(
+                SELECT 1 FROM inventory_snapshot
+                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                  AND on_hand_qty > 0
+            )
+            """,
+            candidate,
+        ))
+
+    if await has_inventory(sku):
+        return sku
+    return base if await has_inventory(base) else sku
+
+
 def decode_items_json(value) -> list[dict]:
     """Normalize asyncpg JSONB output (string by default) to a list."""
     if value is None:
@@ -360,6 +392,7 @@ def parse_spx_xlsx(raw: bytes) -> list[dict]:
 
 class ShipmentItemOut(BaseModel):
     sku: str
+    matched_sku: str
     qty: int
     employee_location: str
     our_location: Optional[str] = None  # None = not in stock
@@ -381,6 +414,7 @@ class PickListItem(BaseModel):
     tracking_no: str
     create_time: str
     sku: str
+    matched_sku: str
     qty: int
     our_location: Optional[str] = None
     employee_location: str = ""
@@ -411,7 +445,7 @@ CREATE TABLE IF NOT EXISTS public.spx_shipments (
     id              BIGSERIAL PRIMARY KEY,
     tracking_no     TEXT NOT NULL,
     create_time     TIMESTAMPTZ,
-    items_json      JSONB NOT NULL,   -- [{sku, qty, employee_location}]
+    items_json      JSONB NOT NULL,   -- [{sku, matched_sku, qty, employee_location}]
     uploaded_at     TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (tracking_no)
 );
@@ -509,6 +543,7 @@ async def upload_spx(
         raise HTTPException(400, "must be .xlsx")
 
     await ensure_spx_table()
+    await ensure_all_sku_table()
 
     raw = await file.read()
     try:
@@ -524,7 +559,12 @@ async def upload_spx(
     async with pool().acquire() as conn:
         for row in rows:
             items_json = [
-                {"sku": sku, "qty": qty, "employee_location": loc}
+                {
+                    "sku": sku,
+                    "matched_sku": await inventory_match_sku(conn, sku),
+                    "qty": qty,
+                    "employee_location": loc,
+                }
                 for sku, qty, loc in row["items"]
             ]
             create_ts = None
@@ -575,13 +615,15 @@ async def lookup_tracking(
     async with pool().acquire() as conn:
         for item in decode_items_json(row["items_json"]):
             sku = item.get("sku", "")
-            all_sku = await resolve_all_sku_details(conn, sku)
-            parts_sku = await resolve_parts_sku_details(conn, sku)
+            matched_sku = item.get("matched_sku") or sku
+            all_sku = await resolve_all_sku_details(conn, matched_sku)
+            parts_sku = await resolve_parts_sku_details(conn, matched_sku)
             our_loc = ((all_sku or {}).get("location")
                        or (parts_sku or {}).get("location")
                        or "无库存")
             items_out.append(ShipmentItemOut(
                 sku=sku,
+                matched_sku=matched_sku,
                 qty=item.get("qty", 1),
                 employee_location=item.get("employee_location", ""),
                 our_location=our_loc,
@@ -633,8 +675,9 @@ async def pick_list(
         for row in rows:
             for item in decode_items_json(row["items_json"]):
                 sku = item.get("sku", "")
-                all_sku = await resolve_all_sku_details(conn, sku)
-                parts_sku = await resolve_parts_sku_details(conn, sku)
+                matched_sku = item.get("matched_sku") or sku
+                all_sku = await resolve_all_sku_details(conn, matched_sku)
+                parts_sku = await resolve_parts_sku_details(conn, matched_sku)
                 our_loc = ((all_sku or {}).get("location")
                            or (parts_sku or {}).get("location")
                            or "无库存")
@@ -642,6 +685,7 @@ async def pick_list(
                     tracking_no=row["tracking_no"],
                     create_time=str(row["effective_time"] or ""),
                     sku=sku,
+                    matched_sku=matched_sku,
                     qty=item.get("qty", 1),
                     our_location=our_loc,
                     employee_location=item.get("employee_location", ""),
