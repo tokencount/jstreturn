@@ -2206,7 +2206,7 @@
         <div class="panel" style="margin-bottom:1rem; padding:.65rem; display:flex; gap:.5rem; flex-wrap:wrap;">
           <button x-show="user && ['admin','returns'].includes(user.role)" @click="spxView='upload'" :class="spxView==='upload' ? 'btn btn-primary' : 'btn'">发货上传</button>
           <button @click="spxView='lookup'" :class="spxView==='lookup' ? 'btn btn-primary' : 'btn'">运单查询</button>
-          <button x-show="user && user.role==='admin'" @click="spxView='pick'; if (!spxPickDate) spxPickDate=kltToday()" :class="spxView==='pick' ? 'btn btn-primary' : 'btn'">拣货单</button>
+          <button x-show="user && user.role==='admin'" @click="spxView='pick'; loadPickBatches()" :class="spxView==='pick' ? 'btn btn-primary' : 'btn'">拣货单</button>
           <button x-show="user && ['admin','repair'].includes(user.role)" @click="spxView='all-sku'; loadAllSku()" :class="spxView==='all-sku' ? 'btn btn-primary' : 'btn'">All SKU 库存</button>
         </div>
 
@@ -2314,60 +2314,32 @@
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📋 拣货单</h2>
           <div class="input-row" style="margin-bottom:.75rem; gap:.5rem;">
-            <input type="date" x-model="spxPickDate" />
-            <button class="btn btn-primary" @click="loadPickList()">查询全部</button>
-            <button class="btn" @click="spxPickDate = kltToday()">今天</button>
+            <select x-model="spxPickBatchId" @change="loadPickList()" style="max-width:32rem;">
+              <option value="">— 选择发货波次 —</option>
+              <template x-for="batch in spxPickBatches" :key="batch.id">
+                <option :value="batch.id" x-text="batch.name + '｜' + batch.shipment_count + ' 单｜' + batch.item_count + ' SKU 项目'"></option>
+              </template>
+            </select>
+            <button class="btn btn-primary" @click="loadPickBatches()">刷新波次</button>
           </div>
-          <div x-show="!spxPickResult?.error">
+          <div x-show="spxPickResult?.batch_id && !spxPickResult?.error">
             <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
-              日期: <b x-text="spxPickResult?.date"></b>
-              · 运单: <b x-text="(spxPickShipments() || []).length"></b>
+              波次: <b x-text="spxPickResult?.batch_name"></b>
               · SKU 项目: <b x-text="spxPickResult?.total"></b>
             </div>
             <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.75rem;">
-              <button class="btn" @click="spxSelectedTrackings = spxPickShipments().map(row => row.tracking_no); spxPickGenerated=false">全选</button>
-              <button class="btn" @click="spxSelectedTrackings = []; spxPickGenerated=false">清空选择</button>
-              <button class="btn btn-primary" :disabled="!spxSelectedTrackings.length" @click="generateSpxPickSummary()">
-                生成拣货单（<span x-text="spxSelectedTrackings.length"></span> 运单）
-              </button>
+              <button class="btn btn-primary" @click="generateSpxPickSummary()">生成拣货单</button>
               <button class="btn btn-primary" :disabled="!spxPickGenerated" @click="window.print()">打印 A4</button>
             </div>
-            <table class="def-table">
-              <thead>
-                <tr>
-                  <th>选择</th>
-                  <th>运单号</th>
-                  <th>日期时间</th>
-                  <th>SKU 项目</th>
-                  <th>总数量</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="shipment in spxPickShipments()" :key="shipment.tracking_no">
-                  <tr>
-                    <td><input type="checkbox" :value="shipment.tracking_no" x-model="spxSelectedTrackings" @change="spxPickGenerated=false" /></td>
-                    <td class="mono" x-text="shipment.tracking_no"></td>
-                    <td class="mono" x-text="formatSpxDateTime(shipment.create_time)"></td>
-                    <td class="mono" x-text="shipment.item_count"></td>
-                    <td class="mono" x-text="shipment.qty_total"></td>
-                  </tr>
-                </template>
-                <template x-if="!spxPickShipments().length">
-                  <tr><td colspan="5" style="text-align:center; color:var(--fg-3);">此日期没有上传运单</td></tr>
-                </template>
-              </tbody>
-            </table>
-
             <div x-show="spxPickGenerated" class="spx-pick-print-area" style="margin-top:1rem;">
               <h3 style="margin:0 0 .5rem;">拣货单 · SKU 汇总</h3>
               <div style="font-size:.85rem; color:var(--fg-2); margin-bottom:.5rem;">
-                日期 <b x-text="spxPickResult?.date"></b> ·
-                已选择 <b x-text="spxSelectedTrackings.length"></b> 个运单 ·
+                波次 <b x-text="spxPickResult?.batch_name"></b> ·
                 SKU <b x-text="spxPickSummaryRows.length"></b> 种 ·
                 总数量 <b x-text="spxPickSummaryRows.reduce((sum,row) => sum + row.qty, 0)"></b>
               </div>
               <table class="def-table">
-                <thead><tr><th>原 SKU</th><th>替代 SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th><th class="no-print">操作</th></tr></thead>
+                <thead><tr><th>SKU</th><th>替换 SKU</th><th>数量总和</th><th>仓位</th></tr></thead>
                 <tbody>
                   <template x-for="row in spxPickSummaryRows" :key="row.key">
                     <tr>
@@ -2375,8 +2347,6 @@
                       <td class="mono" x-text="row.matched_sku"></td>
                       <td class="mono" x-text="row.qty"></td>
                       <td class="mono" x-text="row.location || '—'"></td>
-                      <td class="mono" x-text="row.tracking_count"></td>
-                      <td class="no-print"><button class="btn" @click="removeSpxPickSku(row.key)">移除</button></td>
                     </tr>
                   </template>
                 </tbody>
@@ -3043,7 +3013,7 @@ function app() {
       }
       else if (name === 'spx') {
         this.spxView = this.user && ['admin','returns'].includes(this.user.role) ? 'upload' : 'lookup';
-        if (!this.spxPickDate) this.spxPickDate = this.kltToday();
+        if (this.user && this.user.role === 'admin') this.loadPickBatches();
       }
     },
 
@@ -3059,9 +3029,9 @@ function app() {
     spxLookupResult: {},
     spxPickResult: {},
     spxLookupTracking: '',
-    spxPickDate: '',
+    spxPickBatches: [],
+    spxPickBatchId: '',
     spxView: 'lookup',
-    spxSelectedTrackings: [],
     spxPickSummaryRows: [],
     spxPickGenerated: false,
     spxAllSkuRows: [],
@@ -3109,6 +3079,10 @@ function app() {
         const r = await fetch('/api/spx/upload', { method: 'POST', body: fd, credentials: 'include' });
         const data = await r.json();
         this.spxUploadResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
+        if (r.ok && data.batch_id) {
+          this.spxPickBatchId = data.batch_id;
+          await this.loadPickBatches();
+        }
       } catch(e) {
         this.spxUploadResult = { error: e.message };
       } finally {
@@ -3146,34 +3120,39 @@ function app() {
       }
     },
 
-    async loadPickList() {
-      const date = this.spxPickDate || this.kltToday();
+    async loadPickBatches() {
       try {
-        const r = await fetch(`/api/spx/pick-list?date_str=${date}`, { credentials: 'include' });
+        const r = await fetch('/api/spx/batches', { credentials: 'include' });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
+        this.spxPickBatches = data || [];
+        if (this.spxPickBatchId && !this.spxPickBatches.some(batch => batch.id === this.spxPickBatchId)) {
+          this.spxPickBatchId = '';
+          this.spxPickResult = {};
+        }
+      } catch (e) {
+        this.spxPickBatches = [];
+      }
+    },
+
+    async loadPickList() {
+      if (!this.spxPickBatchId) {
+        this.spxPickResult = {};
+        this.spxPickSummaryRows = [];
+        this.spxPickGenerated = false;
+        return;
+      }
+      try {
+        const r = await fetch(`/api/spx/pick-list?batch_id=${encodeURIComponent(this.spxPickBatchId)}`, { credentials: 'include' });
         const data = await r.json();
         this.spxPickResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
-        this.spxSelectedTrackings = r.ok ? [...new Set((data.items || []).map(item => item.tracking_no))] : [];
         this.spxPickSummaryRows = [];
         this.spxPickGenerated = false;
       } catch(e) {
         this.spxPickResult = { error: e.message };
-        this.spxSelectedTrackings = [];
         this.spxPickSummaryRows = [];
         this.spxPickGenerated = false;
       }
-    },
-
-    spxPickShipments() {
-      const grouped = new Map();
-      for (const item of ((this.spxPickResult && this.spxPickResult.items) || [])) {
-        if (!grouped.has(item.tracking_no)) {
-          grouped.set(item.tracking_no, { tracking_no: item.tracking_no, create_time: item.create_time, item_count: 0, qty_total: 0 });
-        }
-        const row = grouped.get(item.tracking_no);
-        row.item_count += 1;
-        row.qty_total += Number(item.qty || 0);
-      }
-      return [...grouped.values()];
     },
 
     formatSpxDateTime(value) {
@@ -3187,10 +3166,8 @@ function app() {
     },
 
     generateSpxPickSummary() {
-      const selected = new Set(this.spxSelectedTrackings || []);
       const grouped = new Map();
       for (const item of ((this.spxPickResult && this.spxPickResult.items) || [])) {
-        if (!selected.has(item.tracking_no)) continue;
         const originalSku = String(item.sku || '').trim();
         const matchedSku = String(item.matched_sku || originalSku).trim();
         if (!originalSku || !matchedSku) continue;
@@ -3213,10 +3190,6 @@ function app() {
         }))
         .sort((a, b) => a.matched_sku.localeCompare(b.matched_sku) || a.location.localeCompare(b.location));
       this.spxPickGenerated = true;
-    },
-
-    removeSpxPickSku(key) {
-      this.spxPickSummaryRows = this.spxPickSummaryRows.filter(row => row.key !== key);
     },
 
     async exportPurchase() {

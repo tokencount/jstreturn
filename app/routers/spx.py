@@ -12,6 +12,7 @@ import io
 import json
 import logging
 import re
+import uuid
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -60,6 +61,23 @@ def base_sku(sku: str) -> str:
     return sku
 
 
+def inventory_candidates(sku: str) -> list[str]:
+    """Return inventory codes in matching priority for an order SKU.
+
+    Some SPX orders use an ``HE-`` prefixed variant while JST stores the
+    sellable pick SKU without that prefix, e.g. ``HE-AG7421GR-010`` maps to
+    ``AG7421GR``.  That prefix fallback is only valid after stripping an
+    order suffix, so a normal non-variant ``HE-*`` SKU is never rewritten.
+    """
+    base = base_sku(sku)
+    candidates = [sku]
+    if base != sku:
+        candidates.append(base)
+        if base.upper().startswith("HE-") and len(base) > 3:
+            candidates.append(base[3:])
+    return candidates
+
+
 async def inventory_match_sku(conn, sku: str) -> str:
     """Return the SKU used for inventory lookup, preserving the order SKU.
 
@@ -68,10 +86,6 @@ async def inventory_match_sku(conn, sku: str) -> str:
     store this separately as ``matched_sku``; ``sku`` remains the original
     accessory/order SKU for traceability.
     """
-    base = base_sku(sku)
-    if base == sku:
-        return sku
-
     async def has_parts_stock(candidate: str) -> bool:
         """The parts snapshot is the only source with an actual quantity."""
         return bool(await conn.fetchval(
@@ -103,9 +117,13 @@ async def inventory_match_sku(conn, sku: str) -> str:
 
     # All-SKU is a location catalogue, not a quantity source.  Do not let an
     # exact catalogue row suppress the ``-001/-002/-003`` fallback.
-    if await has_parts_stock(sku):
+    candidates = inventory_candidates(sku)
+    if await has_parts_stock(candidates[0]):
         return sku
-    return base if await has_base_inventory(base) else sku
+    for candidate in candidates[1:]:
+        if await has_base_inventory(candidate):
+            return candidate
+    return sku
 
 
 def decode_items_json(value) -> list[dict]:
@@ -432,6 +450,8 @@ class ShipmentOut(BaseModel):
 class UploadResult(BaseModel):
     total_rows: int
     saved_rows: int
+    batch_id: str
+    batch_name: str
 
 
 class PickListItem(BaseModel):
@@ -445,9 +465,18 @@ class PickListItem(BaseModel):
 
 
 class PickListOut(BaseModel):
-    date: str
+    batch_id: str
+    batch_name: str
     items: list[PickListItem]
     total: int
+
+
+class SpxBatchOut(BaseModel):
+    id: str
+    name: str
+    uploaded_at: str
+    shipment_count: int
+    item_count: int
 
 
 class AllSkuRow(BaseModel):
@@ -476,6 +505,15 @@ CREATE TABLE IF NOT EXISTS public.spx_shipments (
 );
 CREATE INDEX IF NOT EXISTS idx_spx_tracking ON public.spx_shipments (tracking_no);
 CREATE INDEX IF NOT EXISTS idx_spx_uploaded ON public.spx_shipments (uploaded_at);
+
+CREATE TABLE IF NOT EXISTS public.spx_upload_batches (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    uploaded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source_filename TEXT NOT NULL DEFAULT ''
+);
+ALTER TABLE public.spx_shipments ADD COLUMN IF NOT EXISTS batch_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_spx_batch ON public.spx_shipments (batch_id);
 """
 
 ALL_SKU_TABLE_SQL = """
@@ -492,6 +530,28 @@ CREATE INDEX IF NOT EXISTS idx_spx_all_sku_location ON public.spx_all_sku_invent
 async def ensure_spx_table():
     async with pool().acquire() as conn:
         await conn.execute(SPX_TABLE_SQL)
+        # Old imports predate upload batches. Keep them usable as one
+        # historical batch per upload date, without guessing an individual
+        # file boundary that was never recorded.
+        await conn.execute(
+            """
+            INSERT INTO spx_upload_batches (id, name, uploaded_at)
+            SELECT 'legacy-' || to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYYMMDD'),
+                   '历史批次 ' || to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYY-MM-DD'),
+                   min(uploaded_at)
+            FROM spx_shipments
+            WHERE batch_id IS NULL
+            GROUP BY to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYYMMDD')
+            ON CONFLICT (id) DO NOTHING
+            """
+        )
+        await conn.execute(
+            """
+            UPDATE spx_shipments
+            SET batch_id = 'legacy-' || to_char(uploaded_at AT TIME ZONE 'Asia/Kuala_Lumpur', 'YYYYMMDD')
+            WHERE batch_id IS NULL
+            """
+        )
 
 
 async def ensure_all_sku_table():
@@ -580,38 +640,46 @@ async def upload_spx(
     if not rows:
         raise HTTPException(400, "no shipment rows found")
 
+    batch_id = str(uuid.uuid4())
+    batch_time = datetime.now(KLT)
+    batch_name = f"{batch_time:%Y-%m-%d %H:%M} · {file.filename}"
     saved = 0
     async with pool().acquire() as conn:
-        for row in rows:
-            items_json = [
-                {
-                    "sku": sku,
-                    "matched_sku": await inventory_match_sku(conn, sku),
-                    "qty": qty,
-                    "employee_location": loc,
-                }
-                for sku, qty, loc in row["items"]
-            ]
-            create_ts = None
-            if row["create_time"]:
-                create_ts = parse_create_time(row["create_time"])
-            result = await conn.execute(
-                """
-                INSERT INTO spx_shipments (tracking_no, create_time, items_json)
-                VALUES ($1, $2, $3::jsonb)
-                ON CONFLICT (tracking_no) DO UPDATE SET
-                    create_time = EXCLUDED.create_time,
-                    items_json = EXCLUDED.items_json,
-                    uploaded_at = NOW()
-                """,
-                row["tracking_no"],
-                create_ts,
-                json.dumps(items_json, ensure_ascii=False),
+        async with conn.transaction():
+            await conn.execute(
+                "INSERT INTO spx_upload_batches (id, name, uploaded_at, source_filename) VALUES ($1, $2, $3, $4)",
+                batch_id, batch_name, batch_time, file.filename,
             )
-            if result.startswith("INSERT") or result.startswith("UPDATE"):
-                saved += 1
+            for row in rows:
+                items_json = [
+                    {
+                        "sku": sku,
+                        "matched_sku": await inventory_match_sku(conn, sku),
+                        "qty": qty,
+                        "employee_location": loc,
+                    }
+                    for sku, qty, loc in row["items"]
+                ]
+                create_ts = None
+                if row["create_time"]:
+                    create_ts = parse_create_time(row["create_time"])
+                result = await conn.execute(
+                    """
+                    INSERT INTO spx_shipments (tracking_no, create_time, items_json, batch_id)
+                    VALUES ($1, $2, $3::jsonb, $4)
+                    ON CONFLICT (tracking_no) DO UPDATE SET
+                        create_time = EXCLUDED.create_time,
+                        items_json = EXCLUDED.items_json,
+                        batch_id = EXCLUDED.batch_id,
+                        uploaded_at = NOW()
+                    """,
+                    row["tracking_no"], create_ts,
+                    json.dumps(items_json, ensure_ascii=False), batch_id,
+                )
+                if result.startswith("INSERT") or result.startswith("UPDATE"):
+                    saved += 1
 
-    return UploadResult(total_rows=len(rows), saved_rows=saved)
+    return UploadResult(total_rows=len(rows), saved_rows=saved, batch_id=batch_id, batch_name=batch_name)
 
 
 @router.get("/lookup/{tracking_no}", response_model=ShipmentOut)
@@ -640,9 +708,9 @@ async def lookup_tracking(
     async with pool().acquire() as conn:
         for item in decode_items_json(row["items_json"]):
             sku = item.get("sku", "")
-            # Older uploads predate ``matched_sku``. Compute it at read time
-            # so their lookup shows the same replacement SKU as new uploads.
-            matched_sku = item.get("matched_sku") or await inventory_match_sku(conn, sku)
+            # Match against the current inventory snapshot at read time so
+            # existing waves receive new suffix/prefix replacements too.
+            matched_sku = await inventory_match_sku(conn, sku)
             all_sku = await resolve_all_sku_details(conn, matched_sku)
             parts_sku = await resolve_parts_sku_details(conn, matched_sku)
             our_loc = ((all_sku or {}).get("location")
@@ -666,35 +734,59 @@ async def lookup_tracking(
     )
 
 
-@router.get("/pick-list", response_model=PickListOut)
-async def pick_list(
-    date_str: str = Query(..., description="Date in YYYY-MM-DD"),
+@router.get("/batches", response_model=list[SpxBatchOut])
+async def list_batches(
     user: dict = Depends(require_role("admin")),
 ):
-    """Print pick-list for all SPX shipments on a given date (YYYY-MM-DD)."""
+    """List upload waves that can be turned into a pick list."""
+    await ensure_spx_table()
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT b.id, b.name, b.uploaded_at,
+                   COUNT(s.id)::int AS shipment_count,
+                   COALESCE(SUM(jsonb_array_length(s.items_json)), 0)::int AS item_count
+            FROM spx_upload_batches b
+            LEFT JOIN spx_shipments s ON s.batch_id = b.id
+            GROUP BY b.id, b.name, b.uploaded_at
+            HAVING COUNT(s.id) > 0
+            ORDER BY b.uploaded_at DESC
+            """
+        )
+    return [
+        SpxBatchOut(
+            id=row["id"], name=row["name"], uploaded_at=str(row["uploaded_at"]),
+            shipment_count=row["shipment_count"], item_count=row["item_count"],
+        )
+        for row in rows
+    ]
 
-    try:
-        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    except ValueError:
-        raise HTTPException(400, "date_str must be YYYY-MM-DD")
+
+@router.get("/pick-list", response_model=PickListOut)
+async def pick_list(
+    batch_id: str = Query(..., min_length=1),
+    user: dict = Depends(require_role("admin")),
+):
+    """Print pick-list for exactly one SPX upload wave."""
 
     await ensure_spx_table()
     await ensure_all_sku_table()
-    start = datetime.combine(target_date, time.min, tzinfo=KLT)
-    end = start + timedelta(days=1)
-
     async with pool().acquire() as conn:
+        batch = await conn.fetchrow(
+            "SELECT id, name FROM spx_upload_batches WHERE id = $1", batch_id
+        )
+        if not batch:
+            raise HTTPException(404, "batch not found")
         rows = await conn.fetch(
             """
             SELECT tracking_no,
                    COALESCE(create_time, uploaded_at) AS effective_time,
                    items_json
             FROM spx_shipments
-            WHERE uploaded_at >= $1
-              AND uploaded_at < $2
+            WHERE batch_id = $1
             ORDER BY uploaded_at, tracking_no
             """,
-            start, end,
+            batch_id,
         )
 
     items_out: list[PickListItem] = []
@@ -702,9 +794,9 @@ async def pick_list(
         for row in rows:
             for item in decode_items_json(row["items_json"]):
                 sku = item.get("sku", "")
-                # Keep old uploaded waybills compatible with the replacement
-                # SKU view used by the pick list.
-                matched_sku = item.get("matched_sku") or await inventory_match_sku(conn, sku)
+                # Always use the current inventory match, including for
+                # waves uploaded before a replacement rule was added.
+                matched_sku = await inventory_match_sku(conn, sku)
                 all_sku = await resolve_all_sku_details(conn, matched_sku)
                 parts_sku = await resolve_parts_sku_details(conn, matched_sku)
                 our_loc = ((all_sku or {}).get("location")
@@ -721,7 +813,8 @@ async def pick_list(
                 ))
 
     return PickListOut(
-        date=date_str,
+        batch_id=batch["id"],
+        batch_name=batch["name"],
         items=items_out,
         total=len(items_out),
     )

@@ -200,6 +200,14 @@ class SpxInventoryMatchSkuTests(unittest.IsolatedAsyncioTestCase):
         conn = _SkuAvailabilityConnection({"ABC-001": True, "ABC": True})
         self.assertEqual(await spx.inventory_match_sku(conn, "ABC-001"), "ABC-001")
 
+    async def test_he_variant_falls_back_to_unprefixed_base(self):
+        conn = _SkuAvailabilityConnection({
+            "HE-AG7421GR-010": False,
+            "HE-AG7421GR": False,
+            "AG7421GR": True,
+        })
+        self.assertEqual(await spx.inventory_match_sku(conn, "HE-AG7421GR-010"), "AG7421GR")
+
 
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
@@ -235,17 +243,17 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("resolve_all_sku_details", source)
         self.assertIn("resolve_parts_sku_details", source)
         self.assertIn("image_url", source)
-        self.assertIn('item.get("matched_sku") or await inventory_match_sku(conn, sku)', source)
+        self.assertIn('matched_sku = await inventory_match_sku(conn, sku)', source)
         self.assertIn('or "无库存"', source)
 
     def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):
         source = inspect.getsource(spx.pick_list)
-        self.assertIn("WHERE uploaded_at >= $1", source)
-        self.assertIn("AND uploaded_at < $2", source)
+        self.assertIn("WHERE batch_id = $1", source)
+        self.assertIn("batch not found", source)
         self.assertIn("decode_items_json", source)
         self.assertIn("resolve_all_sku_details", source)
         self.assertIn("resolve_parts_sku_details", source)
-        self.assertIn('item.get("matched_sku") or await inventory_match_sku(conn, sku)', source)
+        self.assertIn('matched_sku = await inventory_match_sku(conn, sku)', source)
         self.assertIn('or "无库存"', source)
 
     def test_all_sku_catalogue_is_separate_from_parts_inventory(self):
@@ -275,11 +283,12 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("spxUploadResult: null", html)
         self.assertIn("ev.target.value = ''", html)
         self.assertIn("this.spxPickResult = r.ok ? data", html)
-        self.assertIn("查询全部", html)
-        self.assertIn("spxSelectedTrackings", html)
+        self.assertIn("选择发货波次", html)
+        self.assertIn("spxPickBatchId", html)
+        self.assertIn("loadPickBatches()", html)
         self.assertIn("generateSpxPickSummary()", html)
         self.assertIn("拣货单 · SKU 汇总", html)
-        self.assertIn("替代 SKU", html)
+        self.assertIn("替换 SKU", html)
         self.assertIn("数量总和", html)
         self.assertIn("<th>仓位</th>", html)
         self.assertIn("<th>原 SKU</th>", html)
@@ -295,15 +304,14 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn('@click="openImagePreview({ imageUrl: item.image_url, code: item.sku })"', html)
         self.assertIn("cursor:zoom-in", html)
         self.assertIn("const location = item.our_location || item.employee_location", html)
-        self.assertIn("removeSpxPickSku(row.key)", html)
-        self.assertIn("removeSpxPickSku(key)", html)
-        self.assertIn("row.key !== key", html)
+        self.assertNotIn("removeSpxPickSku(row.key)", html)
+        self.assertNotIn("removeSpxPickSku(key)", html)
         self.assertIn("打印 A4", html)
         self.assertIn(':disabled="!spxPickGenerated"', html)
         self.assertIn("@page { size: A4 portrait", html)
         self.assertIn("spx-pick-print-area", html)
         self.assertIn("@click=\"window.print()\"", html)
-        self.assertIn("class=\"no-print\">操作", html)
+        self.assertNotIn("class=\"no-print\">操作", html)
         self.assertIn("All SKU 库存", html)
         self.assertIn("照片</th><th>SKU</th><th>库存</th><th>仓位", html)
         self.assertIn("/api/spx/all-sku", html)
