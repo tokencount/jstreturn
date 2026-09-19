@@ -199,9 +199,13 @@ async def resolve_parts_sku_details(conn, sku: str) -> Optional[dict]:
 
 
 async def resolve_all_sku_details(conn, sku: str) -> Optional[dict]:
-    """Return the new-goods image/location, trying exact then base SKU."""
+    """Read SPX SKU details from the daily unified inventory snapshot."""
     row = await conn.fetchrow(
-        "SELECT location, image_url FROM spx_all_sku_inventory WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))",
+        """SELECT location, COALESCE(image_url, '') AS image_url
+           FROM inventory_snapshot
+           WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+             AND on_hand_qty > 0
+           LIMIT 1""",
         sku,
     )
     if row:
@@ -210,7 +214,11 @@ async def resolve_all_sku_details(conn, sku: str) -> Optional[dict]:
     base = base_sku(sku)
     if base != sku:
         row = await conn.fetchrow(
-            "SELECT location, image_url FROM spx_all_sku_inventory WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))",
+            """SELECT location, COALESCE(image_url, '') AS image_url
+               FROM inventory_snapshot
+               WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                 AND on_hand_qty > 0
+               LIMIT 1""",
             base,
         )
         if row:
@@ -446,6 +454,7 @@ class AllSkuRow(BaseModel):
     sku: str
     location: str
     image_url: str = ""
+    on_hand_qty: int = 0
 
 
 class AllSkuImport(BaseModel):
@@ -521,21 +530,21 @@ async def list_all_sku(
     limit: int = Query(200, ge=1, le=1000),
     user: dict = Depends(require_role("admin", "repair")),
 ):
-    await ensure_all_sku_table()
     term = q.strip()
     async with pool().acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT sku, location, image_url, updated_at
-            FROM spx_all_sku_inventory
-            WHERE ($1 = '' OR sku ILIKE '%' || $1 || '%' OR location ILIKE '%' || $1 || '%')
-            ORDER BY sku
+            SELECT part_code AS sku, location, COALESCE(image_url, '') AS image_url,
+                   on_hand_qty, updated_at
+            FROM inventory_snapshot
+            WHERE ($1 = '' OR part_code ILIKE '%' || $1 || '%' OR location ILIKE '%' || $1 || '%')
+            ORDER BY part_code
             LIMIT $2
             """,
             term, limit,
         )
         total = await conn.fetchval(
-            "SELECT COUNT(*) FROM spx_all_sku_inventory WHERE ($1 = '' OR sku ILIKE '%' || $1 || '%' OR location ILIKE '%' || $1 || '%')",
+            "SELECT COUNT(*) FROM inventory_snapshot WHERE ($1 = '' OR part_code ILIKE '%' || $1 || '%' OR location ILIKE '%' || $1 || '%')",
             term,
         )
     return {"count": int(total or 0), "items": [dict(row) for row in rows]}

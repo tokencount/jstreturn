@@ -2244,16 +2244,17 @@
           </div>
           <div style="font-size:.85rem; color:var(--fg-2); margin-bottom:.5rem;">共 <b x-text="spxAllSkuCount"></b> 个新货 SKU</div>
           <table class="def-table">
-            <thead><tr><th>照片</th><th>SKU</th><th>仓位</th></tr></thead>
+            <thead><tr><th>照片</th><th>SKU</th><th>库存</th><th>仓位</th></tr></thead>
             <tbody>
               <template x-for="row in spxAllSkuRows" :key="row.sku">
                 <tr>
                   <td><img x-show="row.image_url" :src="row.image_url" referrerpolicy="no-referrer" style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white;" /></td>
                   <td class="mono" x-text="row.sku"></td>
+                  <td class="mono" x-text="row.on_hand_qty"></td>
                   <td class="mono" x-text="row.location || '—'"></td>
                 </tr>
               </template>
-              <template x-if="!spxAllSkuRows.length"><tr><td colspan="3" style="text-align:center; color:var(--fg-3);">暂无数据</td></tr></template>
+              <template x-if="!spxAllSkuRows.length"><tr><td colspan="4" style="text-align:center; color:var(--fg-3);">暂无数据</td></tr></template>
             </tbody>
           </table>
         </div>

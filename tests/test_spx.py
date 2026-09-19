@@ -255,6 +255,10 @@ class SpxContractTests(unittest.TestCase):
         self.assertNotIn("inventory_snapshot", import_source)
         self.assertIn('require_role("admin")', import_source)
 
+    def test_all_sku_list_and_lookup_use_unified_inventory_snapshot(self):
+        self.assertIn("FROM inventory_snapshot", inspect.getsource(spx.list_all_sku))
+        self.assertIn("on_hand_qty", inspect.getsource(spx.resolve_all_sku_details))
+
     def test_ui_contains_buttons_sections_and_http_error_handling(self):
         html = (Path(__file__).parents[1] / "app/templates/index.html").read_text(encoding="utf-8")
         for marker in ("tab==='spx'", "spxView", "发货上传", "运单查询", "拣货单"):
@@ -301,7 +305,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("@click=\"window.print()\"", html)
         self.assertIn("class=\"no-print\">操作", html)
         self.assertIn("All SKU 库存", html)
-        self.assertIn("照片</th><th>SKU</th><th>仓位", html)
+        self.assertIn("照片</th><th>SKU</th><th>库存</th><th>仓位", html)
         self.assertIn("/api/spx/all-sku", html)
 
 
