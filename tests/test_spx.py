@@ -177,6 +177,32 @@ class SpxLocationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(conn.queries, ["HS-PART-001", "HS-PART"])
 
 
+class _ImportSkuConnection:
+    def __init__(self, availability):
+        self.availability = availability
+        self.queries = []
+
+    async def fetchval(self, _query, sku):
+        self.queries.append(sku)
+        return self.availability.get(sku, False)
+
+
+class SpxImportSkuNormalizationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_keeps_exact_sku_when_it_has_inventory(self):
+        conn = _ImportSkuConnection({"ABC-001": True, "ABC": True})
+        self.assertEqual(await spx.normalize_import_sku(conn, "ABC-001"), "ABC-001")
+        self.assertEqual(conn.queries, ["ABC-001"])
+
+    async def test_strips_sequence_suffix_when_only_base_has_inventory(self):
+        conn = _ImportSkuConnection({"ABC-001": False, "ABC": True})
+        self.assertEqual(await spx.normalize_import_sku(conn, "ABC-001"), "ABC")
+        self.assertEqual(conn.queries, ["ABC-001", "ABC"])
+
+    async def test_keeps_unknown_suffixed_sku(self):
+        conn = _ImportSkuConnection({"ABC-001": False, "ABC": False})
+        self.assertEqual(await spx.normalize_import_sku(conn, "ABC-001"), "ABC-001")
+
+
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
         source = inspect.getsource(spx.lookup_tracking)

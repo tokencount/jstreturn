@@ -60,6 +60,39 @@ def base_sku(sku: str) -> str:
     return sku
 
 
+async def normalize_import_sku(conn, sku: str) -> str:
+    """Use the base SKU for an imported order only when it has stock.
+
+    A suffixed SKU (for example ``ABC-001``) stays unchanged when it is
+    present in either inventory source.  If it is absent but its base SKU is
+    present, store the base SKU instead.  Unknown SKUs are deliberately kept
+    unchanged so an import never silently turns one unknown product into
+    another unknown product.
+    """
+    base = base_sku(sku)
+    if base == sku:
+        return sku
+
+    async def has_inventory(candidate: str) -> bool:
+        return bool(await conn.fetchval(
+            """
+            SELECT EXISTS(
+                SELECT 1 FROM spx_all_sku_inventory
+                WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))
+            ) OR EXISTS(
+                SELECT 1 FROM inventory_snapshot
+                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                  AND on_hand_qty > 0
+            )
+            """,
+            candidate,
+        ))
+
+    if await has_inventory(sku):
+        return sku
+    return base if await has_inventory(base) else sku
+
+
 def decode_items_json(value) -> list[dict]:
     """Normalize asyncpg JSONB output (string by default) to a list."""
     if value is None:
@@ -509,6 +542,7 @@ async def upload_spx(
         raise HTTPException(400, "must be .xlsx")
 
     await ensure_spx_table()
+    await ensure_all_sku_table()
 
     raw = await file.read()
     try:
@@ -524,7 +558,11 @@ async def upload_spx(
     async with pool().acquire() as conn:
         for row in rows:
             items_json = [
-                {"sku": sku, "qty": qty, "employee_location": loc}
+                {
+                    "sku": await normalize_import_sku(conn, sku),
+                    "qty": qty,
+                    "employee_location": loc,
+                }
                 for sku, qty, loc in row["items"]
             ]
             create_ts = None
