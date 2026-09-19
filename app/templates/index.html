@@ -2313,16 +2313,20 @@
       <div x-show="spxView==='pick' && user && user.role==='admin'">
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📋 拣货单</h2>
-          <div class="input-row" style="margin-bottom:.75rem; gap:.5rem;">
-            <select x-model="spxPickBatchId" @change="loadPickList()" style="max-width:32rem;">
-              <option value="">— 选择发货波次 —</option>
-              <template x-for="batch in spxPickBatches" :key="batch.id">
-                <option :value="batch.id" x-text="batch.name + '｜' + batch.shipment_count + ' 单｜' + batch.item_count + ' SKU 项目'"></option>
-              </template>
-            </select>
+          <div style="margin-bottom:.75rem; display:flex; gap:.5rem; align-items:center;">
+            <span style="font-size:.85rem; color:var(--fg-2);">选择波次（可多选）</span>
             <button class="btn btn-primary" @click="loadPickBatches()">刷新波次</button>
           </div>
-          <div x-show="spxPickResult?.batch_id && !spxPickResult?.error">
+          <div x-show="spxPickBatches.length" style="display:grid; gap:.35rem; margin-bottom:.75rem; max-height:14rem; overflow:auto; padding:.5rem; border:1px solid var(--line); border-radius:.5rem;">
+            <template x-for="batch in spxPickBatches" :key="batch.id">
+              <label style="display:flex; gap:.5rem; align-items:center; margin:0; color:var(--fg); cursor:pointer;">
+                <input type="checkbox" :value="batch.id" x-model="spxPickBatchIds" @change="loadPickList()" style="width:auto;" />
+                <span x-text="batch.name + '｜' + batch.shipment_count + ' 单｜' + batch.item_count + ' SKU 项目'"></span>
+              </label>
+            </template>
+          </div>
+          <div x-show="!spxPickBatches.length" class="empty-state" style="padding:.75rem 0;">暂无发货波次</div>
+          <div x-show="spxPickResult?.batch_ids?.length && !spxPickResult?.error">
             <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
               波次: <b x-text="spxPickResult?.batch_name"></b>
               · SKU 项目: <b x-text="spxPickResult?.total"></b>
@@ -3030,7 +3034,7 @@ function app() {
     spxPickResult: {},
     spxLookupTracking: '',
     spxPickBatches: [],
-    spxPickBatchId: '',
+    spxPickBatchIds: [],
     spxView: 'lookup',
     spxPickSummaryRows: [],
     spxPickGenerated: false,
@@ -3080,7 +3084,7 @@ function app() {
         const data = await r.json();
         this.spxUploadResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
         if (r.ok && data.batch_id) {
-          this.spxPickBatchId = data.batch_id;
+          this.spxPickBatchIds = [data.batch_id];
           await this.loadPickBatches();
         }
       } catch(e) {
@@ -3126,8 +3130,8 @@ function app() {
         const data = await r.json();
         if (!r.ok) throw new Error(data.detail || ('HTTP ' + r.status));
         this.spxPickBatches = data || [];
-        if (this.spxPickBatchId && !this.spxPickBatches.some(batch => batch.id === this.spxPickBatchId)) {
-          this.spxPickBatchId = '';
+        this.spxPickBatchIds = (this.spxPickBatchIds || []).filter(id => this.spxPickBatches.some(batch => batch.id === id));
+        if (!this.spxPickBatchIds.length) {
           this.spxPickResult = {};
         }
       } catch (e) {
@@ -3136,14 +3140,17 @@ function app() {
     },
 
     async loadPickList() {
-      if (!this.spxPickBatchId) {
+      const batchIds = this.spxPickBatchIds || [];
+      if (!batchIds.length) {
         this.spxPickResult = {};
         this.spxPickSummaryRows = [];
         this.spxPickGenerated = false;
         return;
       }
       try {
-        const r = await fetch(`/api/spx/pick-list?batch_id=${encodeURIComponent(this.spxPickBatchId)}`, { credentials: 'include' });
+        const params = new URLSearchParams();
+        batchIds.forEach(id => params.append('batch_ids', id));
+        const r = await fetch(`/api/spx/pick-list?${params.toString()}`, { credentials: 'include' });
         const data = await r.json();
         this.spxPickResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
         this.spxPickSummaryRows = [];

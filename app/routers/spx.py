@@ -465,7 +465,7 @@ class PickListItem(BaseModel):
 
 
 class PickListOut(BaseModel):
-    batch_id: str
+    batch_ids: list[str]
     batch_name: str
     items: list[PickListItem]
     total: int
@@ -769,18 +769,22 @@ async def list_batches(
 
 @router.get("/pick-list", response_model=PickListOut)
 async def pick_list(
-    batch_id: str = Query(..., min_length=1),
+    batch_ids: list[str] = Query(..., min_length=1),
     user: dict = Depends(require_role("admin")),
 ):
-    """Print pick-list for exactly one SPX upload wave."""
+    """Print one merged pick-list for one or more SPX upload waves."""
 
     await ensure_spx_table()
     await ensure_all_sku_table()
+    selected_ids = list(dict.fromkeys(batch_id.strip() for batch_id in batch_ids if batch_id.strip()))
+    if not selected_ids:
+        raise HTTPException(400, "at least one batch is required")
     async with pool().acquire() as conn:
-        batch = await conn.fetchrow(
-            "SELECT id, name FROM spx_upload_batches WHERE id = $1", batch_id
+        batches = await conn.fetch(
+            "SELECT id, name FROM spx_upload_batches WHERE id = ANY($1::text[]) ORDER BY uploaded_at DESC",
+            selected_ids,
         )
-        if not batch:
+        if len(batches) != len(selected_ids):
             raise HTTPException(404, "batch not found")
         rows = await conn.fetch(
             """
@@ -788,10 +792,10 @@ async def pick_list(
                    COALESCE(create_time, uploaded_at) AS effective_time,
                    items_json
             FROM spx_shipments
-            WHERE batch_id = $1
+            WHERE batch_id = ANY($1::text[])
             ORDER BY uploaded_at, tracking_no
             """,
-            batch_id,
+            selected_ids,
         )
 
     items_out: list[PickListItem] = []
@@ -818,8 +822,8 @@ async def pick_list(
                 ))
 
     return PickListOut(
-        batch_id=batch["id"],
-        batch_name=batch["name"],
+        batch_ids=selected_ids,
+        batch_name="、".join(row["name"] for row in batches),
         items=items_out,
         total=len(items_out),
     )

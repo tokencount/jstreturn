@@ -248,7 +248,7 @@ class SpxContractTests(unittest.TestCase):
 
     def test_pick_list_filters_the_uploaded_batch_and_decodes_jsonb(self):
         source = inspect.getsource(spx.pick_list)
-        self.assertIn("WHERE batch_id = $1", source)
+        self.assertIn("WHERE batch_id = ANY($1::text[])", source)
         self.assertIn("batch not found", source)
         self.assertIn("decode_items_json", source)
         self.assertIn("resolve_all_sku_details", source)
@@ -283,8 +283,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("spxUploadResult: null", html)
         self.assertIn("ev.target.value = ''", html)
         self.assertIn("this.spxPickResult = r.ok ? data", html)
-        self.assertIn("选择发货波次", html)
-        self.assertIn("spxPickBatchId", html)
+        self.assertIn("选择波次（可多选）", html)
+        self.assertIn("spxPickBatchIds", html)
         self.assertIn("loadPickBatches()", html)
         self.assertIn("generateSpxPickSummary()", html)
         self.assertIn("拣货单 · SKU 汇总", html)
