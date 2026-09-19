@@ -39,7 +39,24 @@ from app.matcher import reevaluate_all_pending_ready
 
 router = APIRouter(prefix="/api/inventory", tags=["inventory"])
 
-JST_IMAGE_HOST = "jst-yikan-picspace.oss-ap-southeast-1.aliyuncs.com"
+# Hosts emitted by JST inventory exports.  Keep this an explicit allowlist:
+# the image endpoint fetches upstream content and must never become a general
+# proxy.  JST currently returns both its OSS URLs and marketplace/CDN URLs.
+INVENTORY_IMAGE_HOSTS = frozenset({
+    "jst-yikan-picspace.oss-ap-southeast-1.aliyuncs.com",
+    "jst-yikan-picspace-new.oss-ap-southeast-1.aliyuncs.com",
+    "p16-oec-sg.ibyteimg.com",
+    "p16-oec-va.ibyteimg.com",
+    "p16-oec-general.tiktokcdn.com",
+    "p19-oec-sg.ibyteimg.com",
+    "cf.shopee.com.my",
+    "cf.shopee.ph",
+    "s-cf-tw.shopeesz.com",
+    "cbu01.alicdn.com",
+    "s.alicdn.com",
+    "my-live.slatic.net",
+    "sg-test-11.slatic.net",
+})
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 
@@ -308,9 +325,9 @@ async def image_proxy(
 ):
     """Serve JST part images through the app's own origin.
 
-    Some client browsers intermittently fail to render later images when
-    loading Aliyun OSS directly. Only the fixed JST image host is allowed so
-    this endpoint cannot become a general-purpose SSRF proxy.
+    Some client browsers intermittently fail to render marketplace/CDN URLs
+    directly. Only the known hosts emitted by JST are allowed, so this
+    endpoint cannot become a general-purpose SSRF proxy.
     """
     async with pool().acquire() as conn:
         image_url = await conn.fetchval(
@@ -321,7 +338,7 @@ async def image_proxy(
         raise HTTPException(404, "image not found")
 
     parsed = urlparse(image_url)
-    if parsed.scheme != "https" or parsed.hostname != JST_IMAGE_HOST:
+    if parsed.scheme != "https" or parsed.hostname not in INVENTORY_IMAGE_HOSTS:
         raise HTTPException(400, "unsupported image host")
 
     try:

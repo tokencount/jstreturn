@@ -493,6 +493,25 @@ class InventoryPreviewTests(unittest.TestCase):
         r = self.client.get("/api/inventory/image/HS-A")
         self.assertEqual(r.status_code, 400)
 
+    def test_image_proxy_allows_jst_marketplace_cdn_host(self):
+        self.conn.fetchval = AsyncMock(
+            return_value="https://p16-oec-sg.ibyteimg.com/test/part.png"
+        )
+
+        class FakeResponse:
+            status_code = 200
+            headers = {"content-type": "image/png"}
+            content = b"png-bytes"
+
+        client = AsyncMock()
+        client.get.return_value = FakeResponse()
+        client.__aenter__.return_value = client
+        client.__aexit__.return_value = None
+        with patch.object(inventory_mod.httpx, "AsyncClient", return_value=client):
+            r = self.client.get("/api/inventory/image/HS-A")
+
+        self.assertEqual(r.status_code, 200, r.text)
+
 
 if __name__ == "__main__":
     unittest.main()
