@@ -2259,10 +2259,10 @@
               <tbody>
                 <template x-for="(item, idx) in (spxLookupResult.items || [])" :key="idx">
                   <tr>
-                    <td><img x-show="item.image_url" :src="item.image_url" referrerpolicy="no-referrer" :alt="item.sku" role="button" tabindex="0"
-                             @click="openImagePreview({ imageUrl: item.image_url, code: item.sku })"
-                             @keydown.enter.prevent="openImagePreview({ imageUrl: item.image_url, code: item.sku })"
-                             @keydown.space.prevent="openImagePreview({ imageUrl: item.image_url, code: item.sku })"
+                    <td><img x-show="item.image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.sku)" :alt="item.sku" role="button" tabindex="0"
+                             @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.sku), code: item.sku })"
+                             @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.sku), code: item.sku })"
+                             @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.sku), code: item.sku })"
                              style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" /></td>
                     <td class="mono" x-text="item.sku"></td>
                     <td class="mono" x-text="item.matched_sku || item.sku"></td>
