@@ -2362,15 +2362,16 @@
                 总数量 <b x-text="spxPickSummaryRows.reduce((sum,row) => sum + row.qty, 0)"></b>
               </div>
               <table class="def-table">
-                <thead><tr><th>SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th><th class="no-print">操作</th></tr></thead>
+                <thead><tr><th>原 SKU</th><th>替代 SKU</th><th>数量总和</th><th>仓位</th><th>运单数</th><th class="no-print">操作</th></tr></thead>
                 <tbody>
-                  <template x-for="row in spxPickSummaryRows" :key="row.sku">
+                  <template x-for="row in spxPickSummaryRows" :key="row.key">
                     <tr>
-                      <td class="mono" x-text="row.sku"></td>
+                      <td class="mono" x-text="row.original_skus"></td>
+                      <td class="mono" x-text="row.matched_sku"></td>
                       <td class="mono" x-text="row.qty"></td>
-                      <td class="mono" x-text="row.locations || '—'"></td>
+                      <td class="mono" x-text="row.location || '—'"></td>
                       <td class="mono" x-text="row.tracking_count"></td>
-                      <td class="no-print"><button class="btn" @click="removeSpxPickSku(row.sku)">移除</button></td>
+                      <td class="no-print"><button class="btn" @click="removeSpxPickSku(row.key)">移除</button></td>
                     </tr>
                   </template>
                 </tbody>
@@ -3185,23 +3186,32 @@ function app() {
       const grouped = new Map();
       for (const item of ((this.spxPickResult && this.spxPickResult.items) || [])) {
         if (!selected.has(item.tracking_no)) continue;
-        const sku = String(item.sku || '').trim();
-        if (!sku) continue;
-        if (!grouped.has(sku)) grouped.set(sku, { sku, qty: 0, locations: new Set(), trackings: new Set() });
-        const row = grouped.get(sku);
+        const originalSku = String(item.sku || '').trim();
+        const matchedSku = String(item.matched_sku || originalSku).trim();
+        if (!originalSku || !matchedSku) continue;
+        const location = item.our_location || item.employee_location || '';
+        // Physical picking is by the replacement SKU and its warehouse slot.
+        const key = matchedSku + '\u0000' + location;
+        if (!grouped.has(key)) grouped.set(key, {
+          key, matched_sku: matchedSku, location, original_skus: new Set(), qty: 0, trackings: new Set(),
+        });
+        const row = grouped.get(key);
         row.qty += Number(item.qty || 0);
-        const location = item.our_location || item.employee_location;
-        if (location) row.locations.add(location);
+        row.original_skus.add(originalSku);
         row.trackings.add(item.tracking_no);
       }
       this.spxPickSummaryRows = [...grouped.values()]
-        .map(row => ({ sku: row.sku, qty: row.qty, locations: [...row.locations].join(', '), tracking_count: row.trackings.size }))
-        .sort((a, b) => a.sku.localeCompare(b.sku));
+        .map(row => ({
+          key: row.key, matched_sku: row.matched_sku,
+          original_skus: [...row.original_skus].sort().join(', '), qty: row.qty,
+          location: row.location, tracking_count: row.trackings.size,
+        }))
+        .sort((a, b) => a.matched_sku.localeCompare(b.matched_sku) || a.location.localeCompare(b.location));
       this.spxPickGenerated = true;
     },
 
-    removeSpxPickSku(sku) {
-      this.spxPickSummaryRows = this.spxPickSummaryRows.filter(row => row.sku !== sku);
+    removeSpxPickSku(key) {
+      this.spxPickSummaryRows = this.spxPickSummaryRows.filter(row => row.key !== key);
     },
 
     async exportPurchase() {
