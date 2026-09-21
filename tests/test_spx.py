@@ -322,6 +322,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("item.our_location || item.employee_location || '—'", html)
         self.assertIn("<th>SKU 图</th>", html)
         self.assertIn("<th>替换 SKU 图</th>", html)
+        self.assertIn("<th>SKU 图</th>\n                  <th>原 SKU</th>\n                  <th>替换 SKU 图</th>\n                  <th>匹配 SKU</th>", html)
         self.assertIn("x-show=\"item.original_image_url\"", html)
         self.assertIn("x-show=\"item.replacement_image_url\"", html)
         self.assertIn("width:88px; height:88px", html)
