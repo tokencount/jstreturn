@@ -2268,7 +2268,7 @@
                            style="width:160px; height:160px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
                       <span x-show="!item.original_image_url" style="color:var(--fg-3);">—</span>
                     </td>
-                    <td class="mono" x-text="item.sku"></td>
+                    <td class="mono" style="font-size:.78rem;" x-text="item.sku"></td>
                     <td>
                       <img x-show="item.replacement_image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku)" :alt="item.matched_sku" role="button" tabindex="0"
                            @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
@@ -2277,7 +2277,7 @@
                            style="width:160px; height:160px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
                       <span x-show="!item.replacement_image_url" style="color:var(--fg-3);">—</span>
                     </td>
-                    <td class="mono" x-text="item.matched_sku && item.matched_sku !== item.sku ? item.matched_sku : '—'"></td>
+                    <td class="mono" style="font-size:.78rem;" x-text="item.matched_sku && item.matched_sku !== item.sku ? item.matched_sku : '—'"></td>
                     <td class="mono" x-text="item.qty"></td>
                     <td class="mono" x-text="item.our_location || item.employee_location || '—'"></td>
                   </tr>
