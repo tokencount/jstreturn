@@ -2238,12 +2238,12 @@
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">🔍 运单查询</h2>
           <div class="input-row" style="margin-bottom:.75rem;">
-            <input type="text" x-model="spxLookupTracking" placeholder="输入运单号" @keydown.enter="lookupSpxTracking()" />
+            <input type="text" x-ref="spxLookupInput" x-model="spxLookupTracking" placeholder="扫描或输入运单号" autocomplete="off" @keydown.enter.prevent="lookupSpxTracking()" />
             <button class="btn btn-primary" @click="lookupSpxTracking()">查询</button>
           </div>
           <div x-show="!spxLookupResult?.error">
-            <div style="margin-bottom:.5rem; font-size:.85rem; color:var(--fg-2);">
-              运单号: <b x-text="spxLookupResult?.tracking_no"></b>
+            <div style="margin-bottom:.65rem; color:var(--fg-2);">
+              运单号: <b style="font-size:1.45rem; color:var(--fg); letter-spacing:.025em;" x-text="spxLookupResult?.tracking_no"></b>
               · 创建时间: <b x-text="spxLookupResult?.create_time"></b>
             </div>
             <table class="def-table">
@@ -3088,6 +3088,10 @@ function app() {
         }
         const data = await r.json();
         this.spxLookupResult = data;
+        // Keep scanner workflows fast: show the result, then immediately
+        // prepare the same input for the next barcode scan.
+        this.spxLookupTracking = '';
+        this.$nextTick(() => this.$refs.spxLookupInput?.focus());
       } catch(e) {
         this.spxLookupResult = { error: e.message };
       }
