@@ -333,6 +333,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("this.spxLookupTracking = '';", html)
         self.assertIn("this.$refs.spxLookupInput?.focus()", html)
         self.assertIn("font-size:1.45rem", html)
+        self.assertIn('<span style="font-size:.72rem;">· 创建时间:', html)
         self.assertIn(".spx-lookup-table td:nth-child(-n+4)", html)
         self.assertIn('class="def-table spx-lookup-table"', html)
         self.assertIn('style="font-size:.78rem;" x-text="item.sku"', html)
