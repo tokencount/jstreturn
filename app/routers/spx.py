@@ -64,27 +64,30 @@ def base_sku(sku: str) -> str:
 def inventory_candidates(sku: str) -> list[str]:
     """Return inventory codes in matching priority for an order SKU.
 
-    Some SPX orders use an ``HE-`` prefixed variant while JST stores the
-    sellable pick SKU without that prefix, e.g. ``HE-AG7421GR-010`` maps to
-    ``AG7421GR``.  That prefix fallback is only valid after stripping an
-    order suffix, so a normal non-variant ``HE-*`` SKU is never rewritten.
+    Some SPX orders use an ``HS-``/``HE-`` prefixed variant while JST stores
+    the sellable pick SKU without that prefix, e.g.
+    ``HS-A-ST3059BU-001`` maps to ``A-ST3059BU`` and
+    ``HE-AG7421GR-010`` maps to ``AG7421GR``.  Prefix fallback is only valid
+    after stripping an order suffix, so a normal non-variant SKU is never
+    rewritten.
     """
     base = base_sku(sku)
     candidates = [sku]
     if base != sku:
         candidates.append(base)
-        if base.upper().startswith("HE-") and len(base) > 3:
-            candidates.append(base[3:])
+        for prefix in ("HS-", "HE-"):
+            if base.upper().startswith(prefix) and len(base) > len(prefix):
+                candidates.append(base[len(prefix):])
     return candidates
 
 
 async def inventory_match_sku(conn, sku: str) -> str:
     """Return the SKU used for inventory lookup, preserving the order SKU.
 
-    A suffixed order SKU falls back to its base only when the exact code is
-    unavailable and the base code exists in an inventory source.  Callers
-    store this separately as ``matched_sku``; ``sku`` remains the original
-    accessory/order SKU for traceability.
+    A suffixed order SKU falls back to its base (and then its HS/HE-free
+    base) only when the exact code is unavailable and a candidate exists in
+    inventory.  Callers store this separately as ``matched_sku``; ``sku``
+    remains the original accessory/order SKU for traceability.
     """
     async def has_parts_stock(candidate: str) -> bool:
         """The parts snapshot is the only source with an actual quantity."""
@@ -99,14 +102,11 @@ async def inventory_match_sku(conn, sku: str) -> str:
             candidate,
         ))
 
-    async def has_base_inventory(candidate: str) -> bool:
-        """A base SKU may resolve from either the stock snapshot or catalogue."""
+    async def has_inventory_stock(candidate: str) -> bool:
+        """A replacement is valid only when the current snapshot has stock."""
         return bool(await conn.fetchval(
             """
             SELECT EXISTS(
-                SELECT 1 FROM spx_all_sku_inventory
-                WHERE UPPER(TRIM(sku)) = UPPER(TRIM($1))
-            ) OR EXISTS(
                 SELECT 1 FROM inventory_snapshot
                 WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
                   AND on_hand_qty > 0
@@ -115,13 +115,11 @@ async def inventory_match_sku(conn, sku: str) -> str:
             candidate,
         ))
 
-    # All-SKU is a location catalogue, not a quantity source.  Do not let an
-    # exact catalogue row suppress the ``-001/-002/-003`` fallback.
     candidates = inventory_candidates(sku)
     if await has_parts_stock(candidates[0]):
         return sku
     for candidate in candidates[1:]:
-        if await has_base_inventory(candidate):
+        if await has_inventory_stock(candidate):
             return candidate
     return sku
 

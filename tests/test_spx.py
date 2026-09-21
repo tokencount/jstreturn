@@ -216,6 +216,15 @@ class SpxInventoryMatchSkuTests(unittest.IsolatedAsyncioTestCase):
         })
         self.assertEqual(await spx.inventory_match_sku(conn, "HE-AG7421GR-010"), "AG7421GR")
 
+    async def test_hs_variant_falls_back_to_hs_free_base(self):
+        conn = _SkuAvailabilityConnection({
+            "HS-A-ST3059BU-001": False,
+            "HS-A-ST3059BU": False,
+            "A-ST3059BU": True,
+        })
+        self.assertEqual(await spx.inventory_match_sku(conn, "HS-A-ST3059BU-001"), "A-ST3059BU")
+        self.assertEqual(conn.queries, ["HS-A-ST3059BU-001", "HS-A-ST3059BU", "A-ST3059BU"])
+
 
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
