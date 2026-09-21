@@ -2252,7 +2252,7 @@
                   <th>SKU 图</th>
                   <th>原 SKU</th>
                   <th>替换 SKU 图</th>
-                  <th>匹配 SKU</th>
+                  <th>替换 SKU</th>
                   <th>数量</th>
                   <th>仓位</th>
                 </tr>
@@ -2277,7 +2277,7 @@
                            style="width:88px; height:88px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
                       <span x-show="!item.replacement_image_url" style="color:var(--fg-3);">—</span>
                     </td>
-                    <td class="mono" x-text="item.matched_sku || item.sku"></td>
+                    <td class="mono" x-text="item.matched_sku && item.matched_sku !== item.sku ? item.matched_sku : '—'"></td>
                     <td class="mono" x-text="item.qty"></td>
                     <td class="mono" x-text="item.our_location || item.employee_location || '—'"></td>
                   </tr>
@@ -2333,7 +2333,7 @@
                   <template x-for="row in spxPickSummaryRows" :key="row.key">
                     <tr>
                       <td class="mono" x-text="row.original_skus"></td>
-                      <td class="mono" x-text="row.matched_sku"></td>
+                      <td class="mono" x-text="row.has_replacement ? row.matched_sku : '—'"></td>
                       <td class="mono" x-text="row.qty"></td>
                       <td class="mono" x-text="row.location || '—'"></td>
                     </tr>
@@ -3154,17 +3154,18 @@ function app() {
         // Physical picking is by the replacement SKU and its warehouse slot.
         const key = matchedSku + '\u0000' + location;
         if (!grouped.has(key)) grouped.set(key, {
-          key, matched_sku: matchedSku, location, original_skus: new Set(), qty: 0, trackings: new Set(),
+          key, matched_sku: matchedSku, location, original_skus: new Set(), has_replacement: false, qty: 0, trackings: new Set(),
         });
         const row = grouped.get(key);
         row.qty += Number(item.qty || 0);
         row.original_skus.add(originalSku);
+        row.has_replacement = row.has_replacement || matchedSku !== originalSku;
         row.trackings.add(item.tracking_no);
       }
       this.spxPickSummaryRows = [...grouped.values()]
         .map(row => ({
           key: row.key, matched_sku: row.matched_sku,
-          original_skus: [...row.original_skus].sort().join(', '), qty: row.qty,
+          original_skus: [...row.original_skus].sort().join(', '), has_replacement: row.has_replacement, qty: row.qty,
           location: row.location, tracking_count: row.trackings.size,
         }))
         .sort((a, b) => a.matched_sku.localeCompare(b.matched_sku) || a.location.localeCompare(b.location));
