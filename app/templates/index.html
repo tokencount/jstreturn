@@ -2249,7 +2249,8 @@
             <table class="def-table">
               <thead>
                 <tr>
-                  <th>图片</th>
+                  <th>SKU 图</th>
+                  <th>替换 SKU 图</th>
                   <th>原 SKU</th>
                   <th>匹配 SKU</th>
                   <th>数量</th>
@@ -2260,12 +2261,20 @@
                 <template x-for="(item, idx) in (spxLookupResult.items || [])" :key="idx">
                   <tr>
                     <td>
-                      <img x-show="item.image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku)" :alt="item.image_sku || item.sku" role="button" tabindex="0"
-                           @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku), code: item.image_sku || item.sku })"
-                           @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku), code: item.image_sku || item.sku })"
-                           @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku), code: item.image_sku || item.sku })"
-                           style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
-                      <small x-show="item.image_sku && item.image_sku !== item.sku" style="display:block; color:var(--fg-3); font-size:.68rem;">替换图</small>
+                      <img x-show="item.original_image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku)" :alt="item.sku" role="button" tabindex="0"
+                           @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
+                           @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
+                           @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
+                           style="width:88px; height:88px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
+                      <span x-show="!item.original_image_url" style="color:var(--fg-3);">—</span>
+                    </td>
+                    <td>
+                      <img x-show="item.replacement_image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku)" :alt="item.matched_sku" role="button" tabindex="0"
+                           @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
+                           @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
+                           @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
+                           style="width:88px; height:88px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
+                      <span x-show="!item.replacement_image_url" style="color:var(--fg-3);">—</span>
                     </td>
                     <td class="mono" x-text="item.sku"></td>
                     <td class="mono" x-text="item.matched_sku || item.sku"></td>
@@ -2274,7 +2283,7 @@
                   </tr>
                 </template>
                 <template x-if="!(spxLookupResult?.items && spxLookupResult?.items.length)">
-                  <tr><td colspan="5" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
+                  <tr><td colspan="6" style="text-align:center; color:var(--fg-3);">无数据</td></tr>
                 </template>
               </tbody>
             </table>

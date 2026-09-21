@@ -453,6 +453,11 @@ class ShipmentItemOut(BaseModel):
     qty: int
     employee_location: str
     our_location: Optional[str] = None  # None = not in stock
+    original_image_url: str = ""
+    original_image_sku: str = ""
+    replacement_image_url: str = ""
+    replacement_image_sku: str = ""
+    # Backward-compatible single-image value for API consumers.
     image_url: str = ""
     image_sku: str = ""
 
@@ -740,6 +745,7 @@ async def lookup_tracking(
                                      or "")
             image_url = original_image_url or replacement_image_url
             image_sku = sku if original_image_url else (matched_sku if replacement_image_url else "")
+            show_replacement_image = matched_sku != sku and bool(replacement_image_url)
             our_loc = ((all_sku or {}).get("location")
                        or (parts_sku or {}).get("location")
                        or "无库存")
@@ -749,6 +755,10 @@ async def lookup_tracking(
                 qty=item.get("qty", 1),
                 employee_location=item.get("employee_location", ""),
                 our_location=our_loc,
+                original_image_url=original_image_url,
+                original_image_sku=sku if original_image_url else "",
+                replacement_image_url=replacement_image_url if show_replacement_image else "",
+                replacement_image_sku=matched_sku if show_replacement_image else "",
                 image_url=image_url,
                 image_sku=image_sku,
             ))
