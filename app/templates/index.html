@@ -2268,7 +2268,7 @@
                            @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
                            @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
                            @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
-                           style="width:180px; height:180px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
+                           style="width:200px; height:200px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
                       <span x-show="!item.original_image_url" style="color:var(--fg-3);">—</span>
                     </td>
                     <td class="mono" style="font-size:.78rem;" x-text="item.sku"></td>
@@ -2277,7 +2277,7 @@
                            @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
                            @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
                            @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
-                           style="width:180px; height:180px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
+                           style="width:200px; height:200px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
                       <span x-show="!item.replacement_image_url" style="color:var(--fg-3);">—</span>
                     </td>
                     <td class="mono" style="font-size:.78rem;" x-text="item.matched_sku && item.matched_sku !== item.sku ? item.matched_sku : '—'"></td>
