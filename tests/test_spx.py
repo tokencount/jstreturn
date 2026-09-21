@@ -326,7 +326,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("<th>SKU 图</th>\n                  <th>原 SKU</th>\n                  <th>替换 SKU 图</th>\n                  <th>替换 SKU</th>", html)
         self.assertIn("x-show=\"item.original_image_url\"", html)
         self.assertIn("x-show=\"item.replacement_image_url\"", html)
-        self.assertIn("width:88px; height:88px", html)
+        self.assertIn("width:112px; height:112px", html)
         self.assertIn("cursor:zoom-in", html)
         self.assertIn("const location = item.our_location || item.employee_location", html)
         self.assertNotIn("removeSpxPickSku(row.key)", html)
