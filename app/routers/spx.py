@@ -454,6 +454,7 @@ class ShipmentItemOut(BaseModel):
     employee_location: str
     our_location: Optional[str] = None  # None = not in stock
     image_url: str = ""
+    image_sku: str = ""
 
 
 class ShipmentOut(BaseModel):
@@ -734,6 +735,11 @@ async def lookup_tracking(
             all_sku = await resolve_all_sku_details(conn, matched_sku)
             parts_sku = await resolve_parts_sku_details(conn, matched_sku)
             original_image_url = await resolve_original_sku_image(conn, sku)
+            replacement_image_url = ((all_sku or {}).get("image_url")
+                                     or (parts_sku or {}).get("image_url")
+                                     or "")
+            image_url = original_image_url or replacement_image_url
+            image_sku = sku if original_image_url else (matched_sku if replacement_image_url else "")
             our_loc = ((all_sku or {}).get("location")
                        or (parts_sku or {}).get("location")
                        or "无库存")
@@ -743,7 +749,8 @@ async def lookup_tracking(
                 qty=item.get("qty", 1),
                 employee_location=item.get("employee_location", ""),
                 our_location=our_loc,
-                image_url=original_image_url,
+                image_url=image_url,
+                image_sku=image_sku,
             ))
 
     return ShipmentOut(

@@ -2259,11 +2259,14 @@
               <tbody>
                 <template x-for="(item, idx) in (spxLookupResult.items || [])" :key="idx">
                   <tr>
-                    <td><img x-show="item.image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.sku)" :alt="item.sku" role="button" tabindex="0"
-                             @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.sku), code: item.sku })"
-                             @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.sku), code: item.sku })"
-                             @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.sku), code: item.sku })"
-                             style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" /></td>
+                    <td>
+                      <img x-show="item.image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku)" :alt="item.image_sku || item.sku" role="button" tabindex="0"
+                           @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku), code: item.image_sku || item.sku })"
+                           @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku), code: item.image_sku || item.sku })"
+                           @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.image_sku || item.sku), code: item.image_sku || item.sku })"
+                           style="width:56px; height:56px; object-fit:contain; border-radius:.35rem; background:white; cursor:zoom-in;" />
+                      <small x-show="item.image_sku && item.image_sku !== item.sku" style="display:block; color:var(--fg-3); font-size:.68rem;">替换图</small>
+                    </td>
                     <td class="mono" x-text="item.sku"></td>
                     <td class="mono" x-text="item.matched_sku || item.sku"></td>
                     <td class="mono" x-text="item.qty"></td>
