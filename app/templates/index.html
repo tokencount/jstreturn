@@ -3110,8 +3110,11 @@ function app() {
         const r = await fetch(`/api/spx/pick-list?${params.toString()}`, { credentials: 'include' });
         const data = await r.json();
         this.spxPickResult = r.ok ? data : { error: data.detail || ('HTTP ' + r.status) };
-        this.spxPickSummaryRows = [];
-        this.spxPickGenerated = false;
+        if (r.ok) this.generateSpxPickSummary();
+        else {
+          this.spxPickSummaryRows = [];
+          this.spxPickGenerated = false;
+        }
       } catch(e) {
         this.spxPickResult = { error: e.message };
         this.spxPickSummaryRows = [];

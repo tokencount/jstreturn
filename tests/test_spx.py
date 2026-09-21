@@ -296,6 +296,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("spxPickBatchIds", html)
         self.assertIn("loadPickBatches()", html)
         self.assertIn("generateSpxPickSummary()", html)
+        self.assertIn("if (r.ok) this.generateSpxPickSummary();", html)
         self.assertIn("拣货单 · SKU 汇总", html)
         self.assertIn("替换 SKU", html)
         self.assertIn("数量总和", html)
