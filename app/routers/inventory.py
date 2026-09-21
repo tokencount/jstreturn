@@ -68,6 +68,46 @@ class InventoryRow(BaseModel):
     location: Optional[str] = None
 
 
+class InventoryImageCatalogRow(BaseModel):
+    """One exact JST product SKU image, including zero-stock products."""
+
+    part_code: str
+    image_url: str
+
+
+@router.post("/image-catalog/upload")
+async def upload_image_catalog(
+    rows: list[InventoryImageCatalogRow],
+    user: dict = Depends(require_role("admin")),
+):
+    """Upsert product images without changing the sellable inventory snapshot.
+
+    JST's stock export omits zero-stock products, while the product catalogue
+    still provides their exact-SKU images.  This side catalogue is therefore
+    deliberately additive: it never deletes inventory rows or quantities.
+    """
+    normalized: dict[str, str] = {}
+    for row in rows:
+        code = row.part_code.strip()
+        image_url = row.image_url.strip()
+        if code and image_url:
+            normalized[code] = image_url
+    if not normalized:
+        return {"upserted": 0}
+
+    async with pool().acquire() as conn:
+        await conn.executemany(
+            """
+            INSERT INTO inventory_image_catalog (part_code, image_url, updated_at)
+            VALUES ($1, $2, NOW())
+            ON CONFLICT (part_code) DO UPDATE
+            SET image_url = EXCLUDED.image_url, updated_at = NOW()
+            """,
+            list(normalized.items()),
+        )
+    return {"upserted": len(normalized)}
+
+
 @router.post("/upload")
 async def upload_csv(
     file: UploadFile = File(...),
@@ -331,7 +371,20 @@ async def image_proxy(
     """
     async with pool().acquire() as conn:
         image_url = await conn.fetchval(
-            "SELECT image_url FROM inventory_snapshot WHERE part_code = $1",
+            """
+            SELECT image_url FROM (
+                SELECT image_url, 0 AS source_priority
+                FROM inventory_snapshot
+                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                UNION ALL
+                SELECT image_url, 1 AS source_priority
+                FROM inventory_image_catalog
+                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+            ) images
+            WHERE COALESCE(image_url, '') <> ''
+            ORDER BY source_priority
+            LIMIT 1
+            """,
             part_code,
         )
     if not image_url:

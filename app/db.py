@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS public.inventory_snapshot (
 );
 ALTER TABLE public.inventory_snapshot ADD COLUMN IF NOT EXISTS image_url TEXT;
 
+-- Product pictures are useful even when the SKU has no sellable stock.
+-- Keep them separate from ``inventory_snapshot``: a zero-stock catalogue
+-- record must never look like stock to repair/SPX matching.
+CREATE TABLE IF NOT EXISTS public.inventory_image_catalog (
+    part_code   TEXT PRIMARY KEY,
+    image_url   TEXT NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_image_catalog_updated
+    ON public.inventory_image_catalog (updated_at DESC);
+
 -- Inventory locations breakdown (P2 support: multiple warehouse positions per
 -- same part_code). ``inventory_snapshot`` stays the aggregate (one row per
 -- part_code, ``on_hand_qty`` = SUM across all locations). This child table

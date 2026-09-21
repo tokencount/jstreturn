@@ -249,10 +249,17 @@ async def resolve_original_sku_image(conn, sku: str) -> str:
     in shipment lookup: staff need to see the product printed on the waybill.
     """
     row = await conn.fetchrow(
-        """SELECT COALESCE(image_url, '') AS image_url
-           FROM inventory_snapshot
-           WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
-           ORDER BY on_hand_qty DESC
+        """SELECT image_url FROM (
+               SELECT COALESCE(image_url, '') AS image_url, 0 AS source_priority
+               FROM inventory_snapshot
+               WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+               UNION ALL
+               SELECT COALESCE(image_url, '') AS image_url, 1 AS source_priority
+               FROM inventory_image_catalog
+               WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+           ) images
+           WHERE image_url <> ''
+           ORDER BY source_priority
            LIMIT 1""",
         sku,
     )
