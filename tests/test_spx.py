@@ -333,6 +333,8 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("this.spxLookupTracking = '';", html)
         self.assertIn("this.$refs.spxLookupInput?.focus()", html)
         self.assertIn("font-size:1.45rem", html)
+        self.assertIn(".spx-lookup-table td:nth-child(-n+4)", html)
+        self.assertIn('class="def-table spx-lookup-table"', html)
         self.assertIn('style="font-size:.78rem;" x-text="item.sku"', html)
         self.assertIn('style="font-size:.78rem;" x-text="item.matched_sku && item.matched_sku !== item.sku', html)
         self.assertIn("const location = item.our_location || item.employee_location", html)
