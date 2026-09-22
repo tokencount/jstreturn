@@ -93,19 +93,33 @@ async def upload_image_catalog(
         if code and image_url:
             normalized[code] = image_url
     if not normalized:
-        return {"upserted": 0}
+        return {"upserted": 0, "submitted": 0, "unchanged": 0}
 
     async with pool().acquire() as conn:
-        await conn.executemany(
+        changed = await conn.fetchval(
             """
-            INSERT INTO inventory_image_catalog (part_code, image_url, updated_at)
-            VALUES ($1, $2, NOW())
-            ON CONFLICT (part_code) DO UPDATE
-            SET image_url = EXCLUDED.image_url, updated_at = NOW()
+            WITH incoming AS (
+                SELECT * FROM UNNEST($1::TEXT[], $2::TEXT[])
+                    AS row(part_code, image_url)
+            ), written AS (
+                INSERT INTO inventory_image_catalog (part_code, image_url, updated_at)
+                SELECT part_code, image_url, NOW() FROM incoming
+                ON CONFLICT (part_code) DO UPDATE
+                SET image_url = EXCLUDED.image_url, updated_at = NOW()
+                WHERE inventory_image_catalog.image_url
+                    IS DISTINCT FROM EXCLUDED.image_url
+                RETURNING 1
+            )
+            SELECT COUNT(*) FROM written
             """,
-            list(normalized.items()),
+            list(normalized), list(normalized.values()),
         )
-    return {"upserted": len(normalized)}
+    upserted = int(changed or 0)
+    return {
+        "upserted": upserted,
+        "submitted": len(normalized),
+        "unchanged": len(normalized) - upserted,
+    }
 
 
 @router.post("/upload")
