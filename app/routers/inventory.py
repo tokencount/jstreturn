@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import csv
 import io
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
+from time import monotonic
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -58,6 +59,42 @@ INVENTORY_IMAGE_HOSTS = frozenset({
     "sg-test-11.slatic.net",
 })
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+# The shipment scanner often revisits the same popular SKU.  JST image hosts
+# are comparatively slow to establish a new connection, so keep a bounded
+# process-local LRU cache in front of the upstream request.  Browser cache
+# headers remain the first layer; this covers different staff browsers too.
+IMAGE_CACHE_TTL_SECONDS = 6 * 60 * 60
+IMAGE_CACHE_MAX_ITEMS = 512
+_image_cache: OrderedDict[str, tuple[float, bytes, str]] = OrderedDict()
+_image_client: httpx.AsyncClient | None = None
+
+
+def _cached_image(image_url: str) -> tuple[bytes, str] | None:
+    cached = _image_cache.get(image_url)
+    if not cached:
+        return None
+    expires_at, content, content_type = cached
+    if expires_at <= monotonic():
+        _image_cache.pop(image_url, None)
+        return None
+    _image_cache.move_to_end(image_url)
+    return content, content_type
+
+
+def _store_cached_image(image_url: str, content: bytes, content_type: str) -> None:
+    _image_cache[image_url] = (monotonic() + IMAGE_CACHE_TTL_SECONDS, content, content_type)
+    _image_cache.move_to_end(image_url)
+    while len(_image_cache) > IMAGE_CACHE_MAX_ITEMS:
+        _image_cache.popitem(last=False)
+
+
+def _image_http_client() -> httpx.AsyncClient:
+    global _image_client
+    if _image_client is None or _image_client.is_closed:
+        # Reuse TCP/TLS connections to JST instead of paying a connection
+        # setup cost for every SKU image in one scanned waybill.
+        _image_client = httpx.AsyncClient(timeout=10.0, follow_redirects=False)
+    return _image_client
 
 
 class InventoryRow(BaseModel):
@@ -408,18 +445,25 @@ async def image_proxy(
     if parsed.scheme != "https" or parsed.hostname not in INVENTORY_IMAGE_HOSTS:
         raise HTTPException(400, "unsupported image host")
 
-    try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
-            upstream = await client.get(image_url)
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, "image upstream unavailable") from exc
-    if upstream.status_code != 200:
-        raise HTTPException(502, "image upstream unavailable")
-    content_type = upstream.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    if not content_type.startswith("image/") or len(upstream.content) > MAX_IMAGE_BYTES:
-        raise HTTPException(502, "invalid image response")
+    cached = _cached_image(image_url)
+    if cached:
+        content, content_type = cached
+        cache_status = "HIT"
+    else:
+        try:
+            upstream = await _image_http_client().get(image_url)
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, "image upstream unavailable") from exc
+        if upstream.status_code != 200:
+            raise HTTPException(502, "image upstream unavailable")
+        content_type = upstream.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        content = upstream.content
+        if not content_type.startswith("image/") or len(content) > MAX_IMAGE_BYTES:
+            raise HTTPException(502, "invalid image response")
+        _store_cached_image(image_url, content, content_type)
+        cache_status = "MISS"
     return Response(
-        content=upstream.content,
+        content=content,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": "public, max-age=86400", "X-Image-Cache": cache_status},
     )

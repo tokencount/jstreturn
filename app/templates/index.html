@@ -2265,6 +2265,7 @@
                   <tr>
                     <td>
                       <img x-show="item.original_image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku)" :alt="item.sku" role="button" tabindex="0"
+                           loading="eager" decoding="async" fetchpriority="high"
                            @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
                            @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
                            @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.original_image_sku || item.sku), code: item.sku })"
@@ -2274,6 +2275,7 @@
                     <td class="mono" style="font-size:.78rem;" x-text="item.sku"></td>
                     <td>
                       <img x-show="item.replacement_image_url" :src="'/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku)" :alt="item.matched_sku" role="button" tabindex="0"
+                           loading="eager" decoding="async" fetchpriority="high"
                            @click="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
                            @keydown.enter.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
                            @keydown.space.prevent="openImagePreview({ imageUrl: '/api/inventory/image/' + encodeURIComponent(item.replacement_image_sku || item.matched_sku), code: item.matched_sku })"
