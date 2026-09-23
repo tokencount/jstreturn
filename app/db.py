@@ -80,6 +80,10 @@ CREATE TABLE IF NOT EXISTS public.inventory_snapshot (
     updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE public.inventory_snapshot ADD COLUMN IF NOT EXISTS image_url TEXT;
+-- Image/waybill lookup is case-insensitive.  The primary key cannot serve
+-- UPPER(TRIM(part_code)) predicates, so retain matching functional indexes.
+CREATE INDEX IF NOT EXISTS idx_inventory_snapshot_part_normalized
+    ON public.inventory_snapshot (UPPER(TRIM(part_code)));
 
 -- Product pictures are useful even when the SKU has no sellable stock.
 -- Keep them separate from ``inventory_snapshot``: a zero-stock catalogue
@@ -91,6 +95,8 @@ CREATE TABLE IF NOT EXISTS public.inventory_image_catalog (
 );
 CREATE INDEX IF NOT EXISTS idx_inventory_image_catalog_updated
     ON public.inventory_image_catalog (updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_inventory_image_catalog_part_normalized
+    ON public.inventory_image_catalog (UPPER(TRIM(part_code)));
 
 -- Inventory locations breakdown (P2 support: multiple warehouse positions per
 -- same part_code). ``inventory_snapshot`` stays the aggregate (one row per
