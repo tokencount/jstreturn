@@ -65,27 +65,45 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 # headers remain the first layer; this covers different staff browsers too.
 IMAGE_CACHE_TTL_SECONDS = 6 * 60 * 60
 IMAGE_CACHE_MAX_ITEMS = 512
+# Hard byte limit matters more than item count: JST originals vary widely in
+# size.  Keep scanner warm-cache safely inside the existing Render instance.
+IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024
 _image_cache: OrderedDict[str, tuple[float, bytes, str]] = OrderedDict()
+_image_cache_bytes = 0
 _image_client: httpx.AsyncClient | None = None
 
 
 def _cached_image(image_url: str) -> tuple[bytes, str] | None:
+    global _image_cache_bytes
     cached = _image_cache.get(image_url)
     if not cached:
         return None
     expires_at, content, content_type = cached
     if expires_at <= monotonic():
         _image_cache.pop(image_url, None)
+        _image_cache_bytes -= len(content)
         return None
     _image_cache.move_to_end(image_url)
     return content, content_type
 
 
 def _store_cached_image(image_url: str, content: bytes, content_type: str) -> None:
+    global _image_cache_bytes
+    # An oversized single source image is still served, but never retained.
+    if len(content) > IMAGE_CACHE_MAX_BYTES:
+        return
+    old = _image_cache.pop(image_url, None)
+    if old:
+        _image_cache_bytes -= len(old[1])
+    while _image_cache and (
+        len(_image_cache) >= IMAGE_CACHE_MAX_ITEMS
+        or _image_cache_bytes + len(content) > IMAGE_CACHE_MAX_BYTES
+    ):
+        _, (_, evicted, _) = _image_cache.popitem(last=False)
+        _image_cache_bytes -= len(evicted)
     _image_cache[image_url] = (monotonic() + IMAGE_CACHE_TTL_SECONDS, content, content_type)
     _image_cache.move_to_end(image_url)
-    while len(_image_cache) > IMAGE_CACHE_MAX_ITEMS:
-        _image_cache.popitem(last=False)
+    _image_cache_bytes += len(content)
 
 
 def _image_http_client() -> httpx.AsyncClient:
