@@ -30,9 +30,11 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
+from PIL import Image, ImageOps
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import require_role
 from app.db import pool
@@ -113,6 +115,18 @@ def _image_http_client() -> httpx.AsyncClient:
         # setup cost for every SKU image in one scanned waybill.
         _image_client = httpx.AsyncClient(timeout=10.0, follow_redirects=False)
     return _image_client
+
+
+def _make_thumbnail(content: bytes) -> tuple[bytes, str]:
+    """Create a scanner-friendly WebP preview without blocking the event loop."""
+    with Image.open(io.BytesIO(content)) as source:
+        image = ImageOps.exif_transpose(source)
+        image.thumbnail((400, 400), Image.Resampling.LANCZOS)
+        if image.mode not in {"RGB", "RGBA"}:
+            image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+        output = io.BytesIO()
+        image.save(output, format="WEBP", quality=78, method=4)
+        return output.getvalue(), "image/webp"
 
 
 class InventoryRow(BaseModel):
@@ -430,6 +444,7 @@ async def preview_one(
 @router.get("/image/{part_code}")
 async def image_proxy(
     part_code: str,
+    thumbnail: bool = Query(False, description="Return a 400px WebP scanner preview"),
     user: dict = Depends(require_role("admin", "repair", "returns")),
 ):
     """Serve JST part images through the app's own origin.
@@ -463,7 +478,8 @@ async def image_proxy(
     if parsed.scheme != "https" or parsed.hostname not in INVENTORY_IMAGE_HOSTS:
         raise HTTPException(400, "unsupported image host")
 
-    cached = _cached_image(image_url)
+    cache_key = f"{image_url}|thumb" if thumbnail else image_url
+    cached = _cached_image(cache_key)
     if cached:
         content, content_type = cached
         cache_status = "HIT"
@@ -478,7 +494,12 @@ async def image_proxy(
         content = upstream.content
         if not content_type.startswith("image/") or len(content) > MAX_IMAGE_BYTES:
             raise HTTPException(502, "invalid image response")
-        _store_cached_image(image_url, content, content_type)
+        if thumbnail:
+            try:
+                content, content_type = await run_in_threadpool(_make_thumbnail, content)
+            except Exception as exc:
+                raise HTTPException(502, "image thumbnail conversion failed") from exc
+        _store_cached_image(cache_key, content, content_type)
         cache_status = "MISS"
     return Response(
         content=content,
