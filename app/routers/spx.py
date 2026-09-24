@@ -18,12 +18,13 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 import openpyxl
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.auth import require_role
 from app.db import pool
+from app.routers.inventory import prewarm_image_thumbnails
 
 router = APIRouter(prefix="/api/spx", tags=["spx"])
 log = logging.getLogger("jstreturn.spx")
@@ -649,6 +650,7 @@ async def list_all_sku(
 
 @router.post("/upload")
 async def upload_spx(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     user: dict = Depends(require_role("admin", "returns")),
 ):
@@ -677,6 +679,7 @@ async def upload_spx(
     batch_time = datetime.now(KLT)
     batch_name = f"{batch_time:%Y-%m-%d %H:%M} · {file.filename}"
     saved = 0
+    prewarm_skus: set[str] = set()
     async with pool().acquire() as conn:
         async with conn.transaction():
             await conn.execute(
@@ -693,6 +696,9 @@ async def upload_spx(
                     }
                     for sku, qty, loc in row["items"]
                 ]
+                for item in items_json:
+                    prewarm_skus.add(item["sku"])
+                    prewarm_skus.add(item["matched_sku"])
                 create_ts = None
                 if row["create_time"]:
                     create_ts = parse_create_time(row["create_time"])
@@ -711,6 +717,12 @@ async def upload_spx(
                 )
                 if result.startswith("INSERT") or result.startswith("UPDATE"):
                     saved += 1
+
+    # Do not delay the employee's upload response.  The cache warmer fetches
+    # the exact original and replacement thumbnail set for this wave in the
+    # background, so its first scan avoids the JST image-host round trip.
+    if background_tasks and prewarm_skus:
+        background_tasks.add_task(prewarm_image_thumbnails, list(prewarm_skus))
 
     return UploadResult(total_rows=len(rows), saved_rows=saved, batch_id=batch_id, batch_name=batch_name)
 

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import csv
 import io
+import asyncio
 from collections import OrderedDict, defaultdict
 from time import monotonic
 from typing import Optional
@@ -165,6 +166,73 @@ def _make_thumbnail(content: bytes) -> tuple[bytes, str]:
         output = io.BytesIO()
         image.save(output, format="WEBP", quality=78, method=4)
         return output.getvalue(), "image/webp"
+
+
+async def _load_image(image_url: str, thumbnail: bool) -> tuple[bytes, str, str]:
+    """Return a proxied image and keep both scanner and warm-up paths identical."""
+    parsed = urlparse(image_url)
+    if parsed.scheme != "https" or parsed.hostname not in INVENTORY_IMAGE_HOSTS:
+        raise ValueError("unsupported image host")
+    cache_key = f"{image_url}|thumb" if thumbnail else image_url
+    cached = _cached_image(cache_key)
+    if cached:
+        content, content_type = cached
+        return content, content_type, "HIT"
+    upstream = await _image_http_client().get(image_url)
+    if upstream.status_code != 200:
+        raise ValueError("image upstream unavailable")
+    content_type = upstream.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    content = upstream.content
+    if not content_type.startswith("image/") or len(content) > MAX_IMAGE_BYTES:
+        raise ValueError("invalid image response")
+    if thumbnail:
+        content, content_type = await run_in_threadpool(_make_thumbnail, content)
+    _store_cached_image(cache_key, content, content_type)
+    return content, content_type, "MISS"
+
+
+async def prewarm_image_thumbnails(part_codes: list[str]) -> None:
+    """Warm scanner thumbnails after a shipment wave upload.
+
+    This is intentionally best-effort and bounded: a bad JST image must not
+    fail an order upload, and one wave cannot evict the whole process cache.
+    """
+    normalized = sorted({_image_sku_key(code) for code in part_codes if code and code.strip()})[:200]
+    if not normalized:
+        return
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            WITH wanted AS (
+                SELECT DISTINCT UPPER(TRIM(code)) AS sku
+                FROM UNNEST($1::TEXT[]) AS requested(code)
+            ), images AS (
+                SELECT UPPER(TRIM(part_code)) AS sku, image_url, 0 AS source_priority
+                FROM inventory_snapshot
+                WHERE COALESCE(image_url, '') <> ''
+                UNION ALL
+                SELECT UPPER(TRIM(part_code)) AS sku, image_url, 1 AS source_priority
+                FROM inventory_image_catalog
+                WHERE COALESCE(image_url, '') <> ''
+            )
+            SELECT DISTINCT ON (images.sku) images.sku, images.image_url
+            FROM images JOIN wanted USING (sku)
+            ORDER BY images.sku, images.source_priority
+            """,
+            normalized,
+        )
+    semaphore = asyncio.Semaphore(4)
+
+    async def warm(row) -> None:
+        try:
+            async with semaphore:
+                _store_cached_image_url(row["sku"], row["image_url"])
+                await _load_image(row["image_url"], thumbnail=True)
+        except (httpx.HTTPError, ValueError, OSError):
+            # A later scan can retry a temporarily unavailable JST image.
+            return
+
+    await asyncio.gather(*(warm(row) for row in rows))
 
 
 class InventoryRow(BaseModel):
@@ -520,33 +588,14 @@ async def image_proxy(
     if not image_url:
         raise HTTPException(404, "image not found")
 
-    parsed = urlparse(image_url)
-    if parsed.scheme != "https" or parsed.hostname not in INVENTORY_IMAGE_HOSTS:
-        raise HTTPException(400, "unsupported image host")
-
-    cache_key = f"{image_url}|thumb" if thumbnail else image_url
-    cached = _cached_image(cache_key)
-    if cached:
-        content, content_type = cached
-        cache_status = "HIT"
-    else:
-        try:
-            upstream = await _image_http_client().get(image_url)
-        except httpx.HTTPError as exc:
-            raise HTTPException(502, "image upstream unavailable") from exc
-        if upstream.status_code != 200:
-            raise HTTPException(502, "image upstream unavailable")
-        content_type = upstream.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-        content = upstream.content
-        if not content_type.startswith("image/") or len(content) > MAX_IMAGE_BYTES:
-            raise HTTPException(502, "invalid image response")
-        if thumbnail:
-            try:
-                content, content_type = await run_in_threadpool(_make_thumbnail, content)
-            except Exception as exc:
-                raise HTTPException(502, "image thumbnail conversion failed") from exc
-        _store_cached_image(cache_key, content, content_type)
-        cache_status = "MISS"
+    try:
+        content, content_type, cache_status = await _load_image(image_url, thumbnail)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "image upstream unavailable") from exc
+    except ValueError as exc:
+        raise HTTPException(400 if str(exc) == "unsupported image host" else 502, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, "image thumbnail conversion failed") from exc
     return Response(
         content=content,
         media_type=content_type,
