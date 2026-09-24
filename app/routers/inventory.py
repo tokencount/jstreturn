@@ -72,6 +72,11 @@ IMAGE_CACHE_MAX_ITEMS = 512
 IMAGE_CACHE_MAX_BYTES = 64 * 1024 * 1024
 _image_cache: OrderedDict[str, tuple[float, bytes, str]] = OrderedDict()
 _image_cache_bytes = 0
+# Keep the inexpensive SKU -> source URL mapping separately.  Previously a
+# thumbnail cache hit still ran the normalized-SKU SQL query first.  With a
+# half-million-row image catalogue that lookup dominated scanner latency.
+IMAGE_URL_CACHE_MAX_ITEMS = 8_192
+_image_url_cache: OrderedDict[str, tuple[float, str]] = OrderedDict()
 _image_client: httpx.AsyncClient | None = None
 
 
@@ -106,6 +111,39 @@ def _store_cached_image(image_url: str, content: bytes, content_type: str) -> No
     _image_cache[image_url] = (monotonic() + IMAGE_CACHE_TTL_SECONDS, content, content_type)
     _image_cache.move_to_end(image_url)
     _image_cache_bytes += len(content)
+
+
+def _image_sku_key(part_code: str) -> str:
+    return part_code.strip().upper()
+
+
+def _cached_image_url(part_code: str) -> str | None:
+    key = _image_sku_key(part_code)
+    cached = _image_url_cache.get(key)
+    if not cached:
+        return None
+    expires_at, image_url = cached
+    if expires_at <= monotonic():
+        _image_url_cache.pop(key, None)
+        return None
+    _image_url_cache.move_to_end(key)
+    return image_url
+
+
+def _store_cached_image_url(part_code: str, image_url: str) -> None:
+    key = _image_sku_key(part_code)
+    _image_url_cache[key] = (monotonic() + IMAGE_CACHE_TTL_SECONDS, image_url)
+    _image_url_cache.move_to_end(key)
+    while len(_image_url_cache) > IMAGE_URL_CACHE_MAX_ITEMS:
+        _image_url_cache.popitem(last=False)
+
+
+def _clear_image_caches() -> None:
+    """Invalidate source mappings when a stock/image upload changes URLs."""
+    global _image_cache_bytes
+    _image_cache.clear()
+    _image_cache_bytes = 0
+    _image_url_cache.clear()
 
 
 def _image_http_client() -> httpx.AsyncClient:
@@ -184,6 +222,8 @@ async def upload_image_catalog(
             list(normalized), list(normalized.values()),
         )
     upserted = int(changed or 0)
+    if upserted:
+        _clear_image_caches()
     return {
         "upserted": upserted,
         "submitted": len(normalized),
@@ -353,6 +393,7 @@ async def upload_csv(
     # Re-evaluate every PENDING/READY defective against the fresh stock
     # in a single SQL round-trip (was O(N) per-item before).
     flip = await reevaluate_all_pending_ready()
+    _clear_image_caches()
     status_flip = {"to_pending": flip["to_pending"], "to_ready": flip["to_ready"]}
     reevaluated = flip["no_change"] + flip["to_pending"] + flip["to_ready"]
 
@@ -453,24 +494,29 @@ async def image_proxy(
     directly. Only the known hosts emitted by JST are allowed, so this
     endpoint cannot become a general-purpose SSRF proxy.
     """
-    async with pool().acquire() as conn:
-        image_url = await conn.fetchval(
-            """
-            SELECT image_url FROM (
-                SELECT image_url, 0 AS source_priority
-                FROM inventory_snapshot
-                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
-                UNION ALL
-                SELECT image_url, 1 AS source_priority
-                FROM inventory_image_catalog
-                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
-            ) images
-            WHERE COALESCE(image_url, '') <> ''
-            ORDER BY source_priority
-            LIMIT 1
-            """,
-            part_code,
-        )
+    image_url = _cached_image_url(part_code)
+    lookup_cache_status = "HIT" if image_url else "MISS"
+    if not image_url:
+        async with pool().acquire() as conn:
+            image_url = await conn.fetchval(
+                """
+                SELECT image_url FROM (
+                    SELECT image_url, 0 AS source_priority
+                    FROM inventory_snapshot
+                    WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                    UNION ALL
+                    SELECT image_url, 1 AS source_priority
+                    FROM inventory_image_catalog
+                    WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                ) images
+                WHERE COALESCE(image_url, '') <> ''
+                ORDER BY source_priority
+                LIMIT 1
+                """,
+                part_code,
+            )
+        if image_url:
+            _store_cached_image_url(part_code, image_url)
     if not image_url:
         raise HTTPException(404, "image not found")
 
@@ -504,5 +550,9 @@ async def image_proxy(
     return Response(
         content=content,
         media_type=content_type,
-        headers={"Cache-Control": "public, max-age=86400", "X-Image-Cache": cache_status},
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Image-Cache": cache_status,
+            "X-Image-Lookup-Cache": lookup_cache_status,
+        },
     )
