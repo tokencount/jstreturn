@@ -218,6 +218,10 @@ async def put_parts(
         if not current:
             raise HTTPException(404, "not found")
         async with conn.transaction():
+            previous_parts = await conn.fetch(
+                "SELECT part_code, part_name, qty FROM defective_parts WHERE defective_id=$1 ORDER BY id",
+                defective_id,
+            )
             await conn.execute("DELETE FROM defective_parts WHERE defective_id=$1", defective_id)
             for p in parts:
                 await conn.execute(
@@ -230,7 +234,12 @@ async def put_parts(
                 VALUES ($1, 'put_parts', 'defective_item', $2, $3::jsonb)
                 """,
                 user["id"], defective_id,
-                json.dumps({"count": len(parts), "actor_role": user["role"]}),
+                json.dumps({
+                    "count": len(parts),
+                    "actor_role": user["role"],
+                    "previous_parts": [dict(p) for p in previous_parts],
+                    "new_parts": [p.model_dump() for p in parts],
+                }),
             )
 
     try:
@@ -294,7 +303,14 @@ async def complete(
         raise HTTPException(404, "not found")
     if row["status"] == "COMPLETED":
         raise HTTPException(400, "already completed")
-    if row["status"] != "READY":
+    previous_status = row["status"]
+    # Repair staff still follow the normal READY -> COMPLETED workflow.
+    # Admin may manually close a PENDING item when the physical repair has
+    # already been handled or a replacement part was chosen outside the
+    # automatic inventory matcher.
+    if previous_status != "READY" and not (
+        previous_status == "PENDING" and user.get("role") == "admin"
+    ):
         raise HTTPException(400, f"cannot complete: status is {row['status']}")
 
     async with pool().acquire() as conn:
@@ -308,10 +324,15 @@ async def complete(
         )
         await conn.execute(
             """
-            INSERT INTO audit_log (user_id, action, entity_type, entity_id)
-            VALUES ($1, 'complete', 'defective_item', $2)
+            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+            VALUES ($1, 'complete', 'defective_item', $2, $3::jsonb)
             """,
             user["id"], defective_id,
+            json.dumps({
+                "actor_role": user["role"],
+                "previous_status": previous_status,
+                "manual_override": previous_status == "PENDING",
+            }),
         )
     return {"id": defective_id, "status": "COMPLETED"}
 
@@ -407,9 +428,8 @@ async def bulk_action(
       action:                          — required
         "recompute"                  re-evaluate status via inventory
                                      (returns + admin)
-        "mark_complete"              mark READY → COMPLETED
-                                     (repair + admin) — the only bulk action
-                                     available to repair users
+        "mark_complete"              mark READY → COMPLETED (repair/admin),
+                                     or PENDING → COMPLETED (admin only)
         "set_sku"        { sku }     change sku            (returns + admin)
         "set_location"   { location } change 仓位           (returns + admin)
         "set_product_name" { product_name }                (returns + admin)
@@ -466,7 +486,10 @@ async def bulk_action(
                         # NOTE: matcher.evaluate_status acquires pool, so do this AFTER
                         # releasing the row's transaction
                     elif action == "mark_complete":
-                        if row["status"] != "READY":
+                        previous_status = row["status"]
+                        if previous_status != "READY" and not (
+                            previous_status == "PENDING" and role == "admin"
+                        ):
                             failures.append({"id": did, "error": f"status is {row['status']}"})
                             continue
                         await conn.execute(
@@ -482,7 +505,12 @@ async def bulk_action(
                             INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
                             VALUES ($1, 'bulk_complete', 'defective_item', $2, $3::jsonb)
                             """,
-                            user["id"], did, json.dumps({"reason": reason, "actor_role": user["role"]}),
+                            user["id"], did, json.dumps({
+                                "reason": reason,
+                                "actor_role": user["role"],
+                                "previous_status": previous_status,
+                                "manual_override": previous_status == "PENDING",
+                            }),
                         )
                     elif action == "set_sku":
                         new_sku = (payload.get("sku") or "").strip()

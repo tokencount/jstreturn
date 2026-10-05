@@ -312,11 +312,15 @@ class ReturnsPartsPermissionsTests(unittest.TestCase):
     def test_returns_can_put_parts_on_pending(self):
         self._set_role("returns")
         self.conn.fetchrow = AsyncMock(return_value=_mk_item("PENDING"))
+        self.conn.fetch = AsyncMock(return_value=[{"part_code": "HS-OLD", "part_name": None, "qty": 1}])
         r = self.client.put(
             "/api/defectives/42/parts",
             json=[{"part_code": "HS-A", "qty": 2}],
         )
         self.assertEqual(r.status_code, 200, r.text)
+        details = _audit_details(self.conn, "put_parts")
+        self.assertEqual(details["previous_parts"][0]["part_code"], "HS-OLD")
+        self.assertEqual(details["new_parts"][0]["part_code"], "HS-A")
 
 
 class RepairCannotPartsPermissionsTests(unittest.TestCase):
@@ -661,6 +665,37 @@ class CompletePermissionsTests(unittest.TestCase):
         self.conn.fetchrow = AsyncMock(return_value=_mk_item("READY"))
         r = self.client.post("/api/defectives/42/complete")
         self.assertEqual(r.status_code, 200, r.text)
+
+    def test_admin_can_force_complete_pending_with_audit(self):
+        self._set_role("admin")
+        self.conn.fetchrow = AsyncMock(return_value=_mk_item("PENDING"))
+        r = self.client.post("/api/defectives/42/complete")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["status"], "COMPLETED")
+        details = _audit_details(self.conn, "'complete'")
+        self.assertEqual(details["actor_role"], "admin")
+        self.assertEqual(details["previous_status"], "PENDING")
+        self.assertTrue(details["manual_override"])
+
+    def test_repair_cannot_force_complete_pending(self):
+        self._set_role("repair")
+        self.conn.fetchrow = AsyncMock(return_value=_mk_item("PENDING"))
+        r = self.client.post("/api/defectives/42/complete")
+        self.assertEqual(r.status_code, 400, r.text)
+        self.assertFalse(_audit_calls_with(self.conn, "'complete'"))
+
+    def test_admin_can_bulk_complete_pending_with_audit(self):
+        self._set_role("admin")
+        self.conn.fetchrow = AsyncMock(return_value=_mk_item("PENDING"))
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "mark_complete"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["succeeded"], 1)
+        details = _audit_details(self.conn, "bulk_complete")
+        self.assertEqual(details["previous_status"], "PENDING")
+        self.assertTrue(details["manual_override"])
 
 
 class AuditLogActorRoleTests(unittest.TestCase):
