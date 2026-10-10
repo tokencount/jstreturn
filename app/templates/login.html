@@ -76,7 +76,7 @@
 
       <label>Token</label>
       <input id="token" type="password" required placeholder="login token" autocomplete="current-password" />
-      <p class="hint">首次登录任意姓名都会自动建账号（库空时首个用户为 admin）</p>
+      <p class="hint">首次登录用管理员提供的 Token；登录后须立即设置个人密码。</p>
 
       <div id="err" class="err" role="alert"></div>
       <button id="submit-btn" type="submit">登 录</button>
@@ -89,7 +89,11 @@
     (async function () {
       try {
         const r = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' });
-        if (r.ok) { window.location.replace('/'); return; }
+        if (r.ok) {
+          const user = await r.json();
+          window.location.replace(user.must_change_password ? '/change-password' : '/');
+          return;
+        }
       } catch (e) {}
     })();
 
@@ -126,7 +130,8 @@
           btn.textContent = '登 录';
           return;
         }
-        window.location.replace('/');
+        const user = await r.json();
+        window.location.replace(user.must_change_password ? '/change-password' : '/');
       } catch (err) {
         showError(err.message || '网络错误');
         btn.disabled = false;

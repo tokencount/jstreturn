@@ -35,8 +35,22 @@ CREATE TABLE IF NOT EXISTS public.users (
     name         TEXT NOT NULL,
     role         TEXT NOT NULL CHECK (role IN ('returns','repair','admin')),
     active       BOOLEAN DEFAULT TRUE,
+    password_hash TEXT,
+    must_change_password BOOLEAN NOT NULL DEFAULT TRUE,
+    session_version INTEGER NOT NULL DEFAULT 0,
+    dingtalk_user_id TEXT,
     created_at   TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+-- Existing accounts have already logged in; do not lock them out at deploy.
+-- New accounts (and explicit admin resets) must change the initial token.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN;
+UPDATE public.users SET must_change_password=FALSE WHERE must_change_password IS NULL;
+ALTER TABLE public.users ALTER COLUMN must_change_password SET DEFAULT TRUE;
+ALTER TABLE public.users ALTER COLUMN must_change_password SET NOT NULL;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS dingtalk_user_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_users_dingtalk_user_id ON public.users (dingtalk_user_id);
 
 CREATE TABLE IF NOT EXISTS public.defective_items (
     id             SERIAL PRIMARY KEY,

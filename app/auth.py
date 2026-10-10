@@ -1,6 +1,6 @@
-"""Simple session auth using signed cookies.
+"""Signed session cookies and per-user password hashing.
 
-Login: username + password (bcrypt-style: we use a pre-shared secret per user for v1).
+Login: initial admin-issued token or the user's changed password.
 Session: signed cookie containing user_id.
 
 For Telegram login (WebApp initData), use verify_telegram_initdata().
@@ -20,6 +20,7 @@ from fastapi import Cookie, Depends, HTTPException, Request, status
 
 SESSION_COOKIE = "jstreturn_session"
 SESSION_TTL = 60 * 60 * 24 * 30  # 30 days
+PASSWORD_ROUNDS = 260_000
 
 
 def _b64(data: bytes) -> str:
@@ -35,13 +36,13 @@ def _sign(payload: bytes) -> bytes:
     return hmac.new(secret, payload, hashlib.sha256).digest()
 
 
-def make_session(user_id: int) -> str:
-    payload = json.dumps({"u": user_id, "t": int(time.time())}).encode()
+def make_session(user_id: int, version: int = 0) -> str:
+    payload = json.dumps({"u": user_id, "v": version, "t": int(time.time())}).encode()
     sig = _sign(payload)
     return f"{_b64(payload)}.{_b64(sig)}"
 
 
-def read_session(token: str) -> Optional[int]:
+def read_session(token: str) -> Optional[tuple[int, int]]:
     try:
         body, sig = token.split(".", 1)
         payload = _b64d(body)
@@ -52,19 +53,33 @@ def read_session(token: str) -> Optional[int]:
         data = json.loads(payload)
         if time.time() - data["t"] > SESSION_TTL:
             return None
-        return int(data["u"])
+        return int(data["u"]), int(data.get("v", 0))
     except Exception:
         return None
 
 
 def login_token_for(name: str) -> str:
-    """v1: each user has a pre-shared token; first login bootstraps them.
-
-    Real production would use bcrypt-hashed passwords in users.password_hash.
-    """
+    """Temporary initial credential; invalid once a password is set."""
     return hashlib.sha256(
         os.environ["SESSION_SECRET"].encode() + name.encode()
     ).hexdigest()[:16]
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, PASSWORD_ROUNDS)
+    return f"pbkdf2_sha256${PASSWORD_ROUNDS}${salt.hex()}${digest.hex()}"
+
+
+def verify_password(password: str, encoded: str) -> bool:
+    try:
+        algorithm, rounds, salt_hex, digest_hex = encoded.split("$", 3)
+        if algorithm != "pbkdf2_sha256" or not 100_000 <= int(rounds) <= 1_000_000:
+            return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt_hex), int(rounds))
+        return hmac.compare_digest(actual, bytes.fromhex(digest_hex))
+    except (ValueError, TypeError):
+        return False
 
 
 async def current_user(request: Request) -> dict:
@@ -74,17 +89,25 @@ async def current_user(request: Request) -> dict:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "not logged in")
-    uid = read_session(token)
-    if uid is None:
+    session = read_session(token)
+    if session is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid session")
+    uid, version = session
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT id, telegram_id, name, role, active FROM users WHERE id=$1",
+            "SELECT id, telegram_id, name, role, active, must_change_password, session_version FROM users WHERE id=$1",
             uid,
         )
     if row is None or not row["active"]:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found")
-    return dict(row)
+    user = dict(row)
+    if user.get("session_version", 0) != version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session expired")
+    if user.get("must_change_password") and request.url.path not in (
+        "/api/auth/me", "/api/auth/change-password", "/api/auth/logout"
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "password change required")
+    return user
 
 
 def require_role(*roles: str):
