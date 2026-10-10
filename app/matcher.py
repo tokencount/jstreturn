@@ -211,9 +211,10 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
     to flip statuses, so READY items and their per-part reserved counts stay
     in lock-step.
 
-    Pagination: server-side ``limit`` + ``offset``. The ORDER BY is stable
-    (created_at DESC, id DESC) so consecutive pages do not overlap or skip
-    rows. ``offset`` is supported so callers can implement classic
+    Pagination: server-side ``limit`` + ``offset``. READY/PENDING use
+    (created_at DESC, id DESC); COMPLETED uses (completed_at DESC, id DESC)
+    so the latest repairs are included first even when the history cap is hit.
+    ``offset`` is supported so callers can implement classic
     page-of-N pagination with a separate ``count_by_status`` for the total.
     Note: when ``status_filter`` is ``None`` (cross-status listing) the
     matcher's reservation plan is NOT rebuilt — only the per-status views
@@ -258,6 +259,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
         {where}
         ORDER BY
             CASE di.status WHEN 'READY' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END,
+            CASE WHEN di.status = 'COMPLETED' THEN di.completed_at END DESC NULLS LAST,
             di.created_at DESC,
             di.id DESC
         LIMIT $1 OFFSET $2

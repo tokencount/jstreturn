@@ -424,7 +424,7 @@ class ReadyColumnTests(unittest.TestCase):
         'pending' (an exclude of both), so HISTORY continues to show
         every column for forensic completeness."""
         m = re.search(
-            r'<th[^>]*x-show="([^"]+)"[^>]*>[^<]*Reserved',
+            r'<th[^>]*x-show="([^"]+)"[^>]*>\s*(?:<button[^>]*>)?Reserved',
             HTML,
         )
         self.assertIsNotNone(m, "Reserved header <th> not found")
@@ -973,8 +973,8 @@ class LocationColumnDesktopTests(unittest.TestCase):
         # The header just to the right of Part Code must be the new column.
         self.assertRegex(
             HTML,
-            r'<th class="col-part-code">Part Code</th>\s*'
-            r'<th class="col-part-loc">仓位</th>',
+            r'<th class="col-part-code"><button[^>]*>Part Code.*?</th>\s*'
+            r'<th class="col-part-loc"><button[^>]*>仓位.*?</th>',
         )
 
     def test_part_loc_filter_input_present(self):

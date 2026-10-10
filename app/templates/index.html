@@ -1531,20 +1531,22 @@
                   <th class="col-checkbox"><input type="checkbox" :checked="filteredItems.length>0 && filteredItems.every(it=>selectedIds.has(it.id))" @change="toggleSelectAll()" /></th>
                   <th class="col-date"><button class="sort-btn" @click="setSort('business_date')">Date <span class="sort-arrow" x-text="sortKey==='business_date' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
                   <th class="col-pallet"><button class="sort-btn" @click="setSort('pallet_no')">Pallet <span class="sort-arrow" x-text="sortKey==='pallet_no' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
-                  <th class="col-loc">Location</th>
-                  <th class="col-product">Product</th>
+                  <th class="col-loc"><button class="sort-btn" @click="setSort('location')">Location <span class="sort-arrow" x-text="sortKey==='location' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-product"><button class="sort-btn" @click="setSort('product_name')">Product <span class="sort-arrow" x-text="sortKey==='product_name' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
                   <th class="col-sku"><button class="sort-btn" @click="setSort('sku')">SKU <span class="sort-arrow" x-text="sortKey==='sku' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
-                  <th class="col-part-code">Part Code</th>
-                  <th class="col-part-loc">仓位</th>
-                  <th>Part Name</th>
-                  <th class="col-qty">Need</th>
-                  <th class="col-stock" title="当前库存">Stock</th>
-                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="被其它 READY 单占用">Reserved</th>
-                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="stock − reserved">Available</th>
-                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-short">Missing</th>
-                  <th x-show="tab !== 'ready' && tab !== 'pending'">Reason</th>
+                  <th class="col-part-code"><button class="sort-btn" @click="setSort('part_code')">Part Code <span class="sort-arrow" x-text="sortKey==='part_code' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-part-loc"><button class="sort-btn" @click="setSort('part_location')">仓位 <span class="sort-arrow" x-text="sortKey==='part_location' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th><button class="sort-btn" @click="setSort('part_name')">Part Name <span class="sort-arrow" x-text="sortKey==='part_name' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-qty"><button class="sort-btn" @click="setSort('need')">Need <span class="sort-arrow" x-text="sortKey==='need' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th class="col-stock" title="当前库存"><button class="sort-btn" @click="setSort('stock')">Stock <span class="sort-arrow" x-text="sortKey==='stock' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="被其它 READY 单占用"><button class="sort-btn" @click="setSort('reserved')">Reserved <span class="sort-arrow" x-text="sortKey==='reserved' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-stock" title="stock − reserved"><button class="sort-btn" @click="setSort('available')">Available <span class="sort-arrow" x-text="sortKey==='available' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'" class="col-short"><button class="sort-btn" @click="setSort('missing')">Missing <span class="sort-arrow" x-text="sortKey==='missing' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th x-show="tab !== 'ready' && tab !== 'pending'"><button class="sort-btn" @click="setSort('reason')">Reason <span class="sort-arrow" x-text="sortKey==='reason' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
                   <th x-show="tab !== 'ready' && tab !== 'history'" class="col-status">Status</th>
-                  <th x-show="tab === 'history'" class="col-date">Completed</th>
+                  <th x-show="tab === 'history'" class="col-date"><button class="sort-btn" @click="setSort('completed_at')">Completed <span class="sort-arrow" x-text="sortKey==='completed_at' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th x-show="tab === 'history'"><button class="sort-btn" @click="setSort('completed_by_name')">Repair By <span class="sort-arrow" x-text="sortKey==='completed_by_name' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
+                  <th x-show="tab === 'pending'"><button class="sort-btn" @click="setSort('created_by_name')">Fill By <span class="sort-arrow" x-text="sortKey==='created_by_name' ? (sortDir==='asc' ? '↑' : '↓') : ''"></span></button></th>
                   <th class="col-actions"></th>
                 </tr>
                 <tr x-show="['ready','pending'].includes(tab)" class="column-filters">
@@ -1565,6 +1567,7 @@
                   <th x-show="tab !== 'ready' && tab !== 'pending'"><input x-model="columnFilters.reason" placeholder="Reason" /></th>
                   <th x-show="tab !== 'ready' && tab !== 'history'"></th>
                   <th x-show="tab === 'history'"></th>
+                  <th x-show="tab === 'pending'"></th>
                   <th></th>
                 </tr>
               </thead>
@@ -1618,6 +1621,8 @@
                       <span x-show="tab !== 'history'" class="status-chip" :class="row.it.status==='PENDING' ? 'chip-PENDING' : row.it.status==='READY' ? 'chip-READY' : 'chip-COMPLETED'" x-text="row.it.status"></span>
                       <span x-show="tab === 'history' && row.pi===0" class="col-id" style="color:var(--fg-2);" x-text="(row.it.completed_at || '').slice(0,16)"></span>
                     </td>
+                    <td x-show="tab === 'history'"><span x-show="row.pi===0" x-text="row.it.completed_by_name || '—'"></span></td>
+                    <td x-show="tab === 'pending'"><span x-show="row.pi===0" x-text="row.it.created_by_name || '—'"></span></td>
                     <td>
                       <!-- returns / repair / admin can all edit every status, including COMPLETED -->
                       <button x-show="row.pi===0 && user"
@@ -1647,7 +1652,7 @@
             </div>
           </template>
           <div class="row-list">
-            <template x-for="it in filteredItems" :key="'m-' + it.id">
+            <template x-for="it in sortedItems" :key="'m-' + it.id">
               <article class="card">
                 <div class="card-row-1">
                   <span class="pallet" x-text="it.pallet_no"></span>
@@ -1664,6 +1669,9 @@
                   <span><span class="lbl">Date</span> · <span class="val" x-text="it.business_date || (it.created_at || '').slice(0,10) || '—'"></span></span>
                   <span><span class="lbl">Qty</span> · <span class="val" x-text="it.qty"></span></span>
                   <span x-show="it.location"><span class="lbl">·</span></span>
+                  <span x-show="tab === 'history'"><span class="lbl">Completed</span> · <span class="val" x-text="(it.completed_at || '').slice(0,16) || '—'"></span></span>
+                  <span x-show="tab === 'history'"><span class="lbl">Repair By</span> · <span class="val" x-text="it.completed_by_name || '—'"></span></span>
+                  <span x-show="tab === 'pending'"><span class="lbl">Fill By</span> · <span class="val" x-text="it.created_by_name || '—'"></span></span>
                 </div>
                 <details class="parts-toggle" @toggle="onPartsToggle(it.id, $event.target.open)">
                   <summary>
@@ -2599,7 +2607,7 @@ function app() {
       // Flatten items × parts into one row per part for the table view.
       // ticket-info columns are shown only on the first row (pi === 0).
       const out = [];
-      for (const it of this.filteredItems) {
+      for (const it of this.sortedItems) {
         const parts = (it.parts && it.parts.length)
           ? it.parts
           : [{ part_code: '—', part_name: '', need: it.qty, stock: 0, reserved: 0, available: 0, missing: 0, reason: '' }];
@@ -2607,22 +2615,31 @@ function app() {
       }
       return out;
     },
-    get sortedRows() {
-      const rows = this.expandedRows;
+    get sortedItems() {
       const key = this.sortKey;
       const dir = this.sortDir === 'asc' ? 1 : -1;
-      const cmp = (a, b) => {
-        // Always group by item first so the ticket-info row sits at the top.
-        if (a.it.id !== b.it.id) return a.it.id > b.it.id ? 1 : -1;
-        if (a.pi !== b.pi) return a.pi - b.pi;
-        if (key === 'business_date' || key === 'sku' || key === 'pallet_no') {
-          const av = String(a.it[key] || '');
-          const bv = String(b.it[key] || '');
-          if (av !== bv) return av > bv ? dir : -dir;
-        }
-        return 0;
+      const partText = { part_code: 'part_code', part_name: 'part_name', reason: 'reason' };
+      const partNumbers = ['need', 'stock', 'reserved', 'available', 'missing'];
+      const value = (it) => {
+        const parts = it.parts || [];
+        if (key === 'business_date') return it.business_date || (it.created_at || '').slice(0, 10);
+        if (key === 'part_location') return parts.flatMap(p => (p.inventory_locations || []).map(l => l.location || '')).sort()[0] || '';
+        if (partText[key]) return parts.map(p => p[partText[key]] || '').sort()[0] || '';
+        if (partNumbers.includes(key)) return parts.reduce((sum, p) => sum + Number(p[key] || 0), 0);
+        return it[key] || '';
       };
-      return rows.slice().sort(cmp);
+      return (this.filteredItems || []).slice().sort((a, b) => {
+        const av = value(a), bv = value(b);
+        // Blank historical account/timestamp values stay at the bottom.
+        if (av === '' && bv !== '') return 1;
+        if (bv === '' && av !== '') return -1;
+        const cmp = typeof av === 'number' && typeof bv === 'number'
+          ? av - bv : String(av).localeCompare(String(bv), undefined, { numeric: true });
+        return cmp ? cmp * dir : b.id - a.id;
+      });
+    },
+    get sortedRows() {
+      return this.expandedRows;
     },
     form: {
       headers: [
@@ -2999,6 +3016,8 @@ function app() {
 
     goTab(name) {
       this.tab = name;
+      this.sortKey = name === 'history' ? 'completed_at' : 'business_date';
+      this.sortDir = 'desc';
       if (name === 'ready') this.loadList('READY');
       else if (name === 'pending') this.loadList('PENDING');
       else if (name === 'history') this.loadList('COMPLETED');
