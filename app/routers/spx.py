@@ -3,7 +3,7 @@
 Workflow:
   1. Upload SPX Excel → rows parsed & stored in spx_shipments
   2. Scan Tracking No. → return SKUs + our location + employee-entered location
-  3. Admin print pick-list → filter by date, show all AWBs ready for picking
+  3. Returns/admin print pick-list → filter by date, show all AWBs ready for picking
   4. JST fetcher for new-pick locations (拣货仓位 / 主仓 / exclude 配件)
 """
 from __future__ import annotations
@@ -596,7 +596,7 @@ async def ensure_all_sku_table():
 @router.post("/all-sku/import")
 async def import_all_sku(
     payload: AllSkuImport = Body(...),
-    user: dict = Depends(require_role("admin")),
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """Atomically replace the separate new-goods SKU/location catalogue."""
     normalized = {}
@@ -622,7 +622,7 @@ async def import_all_sku(
 async def list_all_sku(
     q: str = "",
     limit: int = Query(200, ge=1, le=1000),
-    user: dict = Depends(require_role("admin", "repair")),
+    user: dict = Depends(require_role("returns", "admin", "repair")),
 ):
     term = q.strip()
     async with pool().acquire() as conn:
@@ -730,7 +730,7 @@ async def upload_spx(
 @router.get("/lookup/{tracking_no}", response_model=ShipmentOut)
 async def lookup_tracking(
     tracking_no: str,
-    user: dict = Depends(require_role("admin", "repair")),
+    user: dict = Depends(require_role("returns", "admin", "repair")),
 ):
     """Scan a Tracking No. → return SKUs, our location, employee location."""
 
@@ -791,7 +791,7 @@ async def lookup_tracking(
 
 @router.get("/batches", response_model=list[SpxBatchOut])
 async def list_batches(
-    user: dict = Depends(require_role("admin")),
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """List upload waves that can be turned into a pick list."""
     await ensure_spx_table()
@@ -820,7 +820,7 @@ async def list_batches(
 @router.get("/pick-list", response_model=PickListOut)
 async def pick_list(
     batch_ids: list[str] = Query(..., min_length=1),
-    user: dict = Depends(require_role("admin")),
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """Print one merged pick-list for one or more SPX upload waves."""
 

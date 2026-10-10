@@ -229,7 +229,7 @@ class SpxInventoryMatchSkuTests(unittest.IsolatedAsyncioTestCase):
 class SpxContractTests(unittest.TestCase):
     def test_lookup_route_matches_visible_roles(self):
         source = inspect.getsource(spx.lookup_tracking)
-        self.assertNotIn("returns", source)
+        self.assertIn('require_role("returns", "admin", "repair")', source)
 
     def test_upload_route_allows_admin_and_returns(self):
         source = inspect.getsource(spx.upload_spx)
@@ -281,7 +281,7 @@ class SpxContractTests(unittest.TestCase):
         self.assertIn("spx_all_sku_inventory", source)
         import_source = inspect.getsource(spx.import_all_sku)
         self.assertNotIn("inventory_snapshot", import_source)
-        self.assertIn('require_role("admin")', import_source)
+        self.assertIn('require_role("returns", "admin")', import_source)
 
     def test_all_sku_list_and_lookup_use_unified_inventory_snapshot(self):
         self.assertIn("FROM inventory_snapshot", inspect.getsource(spx.list_all_sku))

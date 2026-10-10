@@ -253,7 +253,7 @@ class InventoryImageCatalogRow(BaseModel):
 @router.post("/image-catalog/upload")
 async def upload_image_catalog(
     rows: list[InventoryImageCatalogRow],
-    user: dict = Depends(require_role("admin")),
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """Upsert product images without changing the sellable inventory snapshot.
 
@@ -302,7 +302,7 @@ async def upload_image_catalog(
 @router.post("/upload")
 async def upload_csv(
     file: UploadFile = File(...),
-    user: dict = Depends(require_role("admin")),
+    user: dict = Depends(require_role("returns", "admin")),
 ):
     """Upload JST inventory CSV. Expected columns (case-insensitive, flexible
     order, multiple Chinese/English aliases):
@@ -474,7 +474,7 @@ async def upload_csv(
 
 
 @router.get("/summary")
-async def summary(user: dict = Depends(require_role("admin", "repair"))):
+async def summary(user: dict = Depends(require_role("returns", "admin", "repair"))):
     async with pool().acquire() as conn:
         inv_row = await conn.fetchrow(
             """

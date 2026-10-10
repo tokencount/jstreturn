@@ -169,7 +169,7 @@ async def patch_defective(
         if current is None:
             raise HTTPException(404, "not found")
         # returns / admin can patch on every status, including COMPLETED.
-        # The flow gate is on /complete (which requires repair/admin), not on
+        # The flow gate is on /complete (which allows all roles), not on
         # header edits — returns still needs to be able to fix mistyped
         # SKUs after the fact.
         row = await conn.fetchrow(
@@ -292,7 +292,7 @@ async def delete_defective(
 @router.post("/{defective_id}/complete")
 async def complete(
     defective_id: int,
-    user: dict = Depends(require_role("repair", "admin")),
+    user: dict = Depends(require_role("repair", "returns", "admin")),
 ):
     async with pool().acquire() as conn:
         row = await conn.fetchrow(
@@ -305,11 +305,11 @@ async def complete(
         raise HTTPException(400, "already completed")
     previous_status = row["status"]
     # Repair staff still follow the normal READY -> COMPLETED workflow.
-    # Admin may manually close a PENDING item when the physical repair has
+    # Returns/admin may manually close a PENDING item when the physical repair has
     # already been handled or a replacement part was chosen outside the
     # automatic inventory matcher.
     if previous_status != "READY" and not (
-        previous_status == "PENDING" and user.get("role") == "admin"
+        previous_status == "PENDING" and user.get("role") in ("returns", "admin")
     ):
         raise HTTPException(400, f"cannot complete: status is {row['status']}")
 
@@ -428,8 +428,8 @@ async def bulk_action(
       action:                          — required
         "recompute"                  re-evaluate status via inventory
                                      (returns + admin)
-        "mark_complete"              mark READY → COMPLETED (repair/admin),
-                                     or PENDING → COMPLETED (admin only)
+        "mark_complete"              mark READY → COMPLETED (all roles),
+                                     or PENDING → COMPLETED (returns/admin)
         "set_sku"        { sku }     change sku            (returns + admin)
         "set_location"   { location } change 仓位           (returns + admin)
         "set_product_name" { product_name }                (returns + admin)
@@ -450,13 +450,11 @@ async def bulk_action(
         raise HTTPException(400, "action is required")
 
     role = user.get("role")
-    # Per-action matrix. repair only gets mark_complete; returns +
-    # admin can do everything except mark_complete (which stays
-    # repair+admin only — Cc doesn't want returns flipping items to
-    # COMPLETED via the bulk endpoint).
+    # Per-action matrix. repair only gets mark_complete; returns/admin
+    # can perform every action, including PENDING manual completion.
     if action == "mark_complete":
-        if role not in ("repair", "admin"):
-            raise HTTPException(403, "mark_complete requires repair/admin")
+        if role not in ("repair", "returns", "admin"):
+            raise HTTPException(403, "mark_complete requires repair/returns/admin")
     elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name"):
         if role not in ("returns", "admin"):
             raise HTTPException(403, f"{action} requires returns/admin")
@@ -488,7 +486,7 @@ async def bulk_action(
                     elif action == "mark_complete":
                         previous_status = row["status"]
                         if previous_status != "READY" and not (
-                            previous_status == "PENDING" and role == "admin"
+                            previous_status == "PENDING" and role in ("returns", "admin")
                         ):
                             failures.append({"id": did, "error": f"status is {row['status']}"})
                             continue

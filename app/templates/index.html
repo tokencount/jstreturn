@@ -1483,7 +1483,7 @@
           <select x-model="bulkAction" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;">
             <option value="">— 选动作 —</option>
             <option value="recompute">重算状态（按当前库存）</option>
-            <option value="mark_complete">标记完成（PENDING 仅 Admin）</option>
+            <option value="mark_complete">标记完成（PENDING：returns/admin）</option>
             <option value="set_sku">改 SKU（returns/repair/admin）</option>
             <option value="set_product_name">改 Product Name（returns/repair/admin）</option>
             <option value="set_location">改 仓位（returns/repair/admin）</option>
@@ -1631,7 +1631,7 @@
                       <button x-show="row.pi===0 && user"
                               @click.stop="confirmDelete(row.it.id, row.it.pallet_no)"
                               class="btn btn-danger" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">删</button>
-                      <button x-show="row.pi===0 && user && ((row.it.status==='READY' && ['repair','admin'].includes(user.role)) || (row.it.status==='PENDING' && user.role==='admin'))"
+                      <button x-show="row.pi===0 && user && ((row.it.status==='READY' && ['repair','returns','admin'].includes(user.role)) || (row.it.status==='PENDING' && ['returns','admin'].includes(user.role)))"
                               @click="complete(row.it.id)" class="btn btn-primary" style="margin-left:.15rem; padding:.2rem .55rem; font-size:.75rem;">完成</button>
                     </td>
                   </tr>
@@ -1723,7 +1723,7 @@
                   <button class="btn btn-danger" @click="confirmDelete(it.id, it.pallet_no)"
                           x-show="user">删</button>
                   <button class="btn btn-primary" @click="complete(it.id)"
-                          x-show="user && ((it.status === 'READY' && ['repair','admin'].includes(user.role)) || (it.status === 'PENDING' && user.role === 'admin'))">完成</button>
+                          x-show="user && ((it.status === 'READY' && ['repair','returns','admin'].includes(user.role)) || (it.status === 'PENDING' && ['returns','admin'].includes(user.role)))">完成</button>
                 </div>
               </article>
             </template>
@@ -1889,12 +1889,12 @@
           </h3>
           <p>
             上传 CSV 后会<b>清空旧库存 + 写入新库存</b>。
-            所有 PENDING / READY 配件状态会自动重新评估（READY ↔ PENDING）。仅 admin 可操作。
+            所有 PENDING / READY 配件状态会自动重新评估（READY ↔ PENDING）。returns / admin 可操作。
           </p>
-          <div x-show="user && user.role!=='admin'" class="alert alert-warn" style="margin:0 0 .85rem;">
-            ⚠ 上传库存需要 admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
+          <div x-show="user && !['returns','admin'].includes(user.role)" class="alert alert-warn" style="margin:0 0 .85rem;">
+            ⚠ 上传库存需要 returns / admin 角色。你当前是 <b x-text="user ? user.role : ''"></b>。
           </div>
-          <div x-show="user && user.role==='admin'" style="display:flex; gap:.65rem; flex-wrap:wrap; align-items:center;">
+          <div x-show="user && ['returns','admin'].includes(user.role)" style="display:flex; gap:.65rem; flex-wrap:wrap; align-items:center;">
             <label class="btn btn-danger" style="cursor:pointer;">
               <svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" stroke="currentColor" fill="none" stroke-width="2">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -2218,7 +2218,7 @@
         <div class="panel" style="margin-bottom:1rem; padding:.65rem; display:flex; gap:.5rem; flex-wrap:wrap;">
           <button x-show="user && ['admin','returns'].includes(user.role)" @click="spxView='upload'" :class="spxView==='upload' ? 'btn btn-primary' : 'btn'">发货上传</button>
           <button @click="spxView='lookup'" :class="spxView==='lookup' ? 'btn btn-primary' : 'btn'">运单查询</button>
-          <button x-show="user && user.role==='admin'" @click="spxView='pick'; loadPickBatches()" :class="spxView==='pick' ? 'btn btn-primary' : 'btn'">拣货单</button>
+          <button x-show="user && ['returns','admin'].includes(user.role)" @click="spxView='pick'; loadPickBatches()" :class="spxView==='pick' ? 'btn btn-primary' : 'btn'">拣货单</button>
         </div>
 
       <!-- SPX-UPLOAD VIEW -->
@@ -2309,7 +2309,7 @@
       </div>
 
       <!-- SPX-PICK VIEW -->
-      <div x-show="spxView==='pick' && user && user.role==='admin'">
+      <div x-show="spxView==='pick' && user && ['returns','admin'].includes(user.role)">
         <div class="panel" style="margin-bottom:1rem;">
           <h2 style="margin:0 0 .75rem; font-size:1.1rem;">📋 拣货单</h2>
           <div style="margin-bottom:.75rem; display:flex; gap:.5rem; align-items:center;">
@@ -2458,7 +2458,7 @@ HS-A-OU8035BK-008</pre>
           <button type="button" @click="saveEdit()" class="btn btn-primary" :disabled="editModal.saving || editModal.savingParts" x-text="editModal.saving ? '保存中…' : '保存 ticket'"></button>
         </div>
       </div>
-      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件 会重新评估 PENDING/READY 状态。<span x-show="user && user.role !== 'admin'">所有角色均可编辑头/配件；完成仍需 repair/admin。</span></p>
+      <p style="margin-top:.85rem; font-size:.75rem; color:var(--fg-3);">💡 改 SKU 或配件会重新评估 PENDING/READY 状态。returns/admin 可完成 PENDING；repair 可完成 READY。</p>
     </div>
   </div>
     </div>
@@ -3027,7 +3027,7 @@ function app() {
       }
       else if (name === 'spx') {
         this.spxView = this.user && ['admin','returns'].includes(this.user.role) ? 'upload' : 'lookup';
-        if (this.user && this.user.role === 'admin') this.loadPickBatches();
+        if (this.user && ['returns','admin'].includes(this.user.role)) this.loadPickBatches();
       }
     },
 
@@ -3843,7 +3843,7 @@ function app() {
     async runBulkAction() {
       if (!this.bulkAction || this.selectedIds.size === 0) return;
       const overrideNote = this.bulkAction === 'mark_complete' && this.tab === 'pending'
-        ? '\n所选 PENDING 将由 Admin 强制转为 COMPLETED。' : '';
+        ? '\n所选 PENDING 将手动转为 COMPLETED。' : '';
       if (!confirm(`对 ${this.selectedIds.size} 项执行 “${this.bulkAction}” ?${overrideNote}`)) return;
       this.bulkBusy = true;
       this.bulkResult = '';
@@ -3872,7 +3872,7 @@ function app() {
 
     async complete(id) {
       const it = (this.items || []).find(x => x.id === id);
-      const pendingNote = it && it.status === 'PENDING' ? '\n此单仍是 PENDING，将由 Admin 强制转为 COMPLETED。' : '';
+      const pendingNote = it && it.status === 'PENDING' ? '\n此单仍是 PENDING，将手动转为 COMPLETED。' : '';
       if (!confirm('确认完成 #' + id + '？' + pendingNote)) return;
       try {
         await this.api('/api/defectives/' + id + '/complete', { method: 'POST' });

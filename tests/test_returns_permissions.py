@@ -1,6 +1,6 @@
-"""Returns / repair / admin permission matrix — P3 final.
+"""Returns / repair / admin permission matrix.
 
-The P3 final matrix (per Cc's latest clarification):
+Returns has admin's operational permissions; only account management stays admin-only.
 
   | op                              | returns | repair | admin |
   |---------------------------------|---------|--------|-------|
@@ -8,11 +8,11 @@ The P3 final matrix (per Cc's latest clarification):
   | PATCH  /api/defectives/{id}     | ✓       | ✗      | ✓     |
   | DELETE /api/defectives/{id}     | ✓       | ✗      | ✓     |
   | PUT    /api/defectives/{id}/parts | ✓     | ✗      | ✓     |
-  | POST   /api/defectives/{id}/complete | ✗   | ✓      | ✓     |
-  | POST   /api/defectives/bulk mark_complete | ✗ | ✓ | ✓ |
+  | POST   /api/defectives/{id}/complete | ✓   | ✓      | ✓     |
+  | POST   /api/defectives/bulk mark_complete | ✓ | ✓ | ✓ |
   | POST   /api/defectives/bulk recompute | ✓ | ✗     | ✓     |
   | POST   /api/defectives/bulk delete / set_* | ✓ | ✗ | ✓ |
-  | POST   /api/inventory/upload           | ✗    | ✗ | ✓ |
+  | POST   /api/inventory/upload           | ✓    | ✗ | ✓ |
   | POST   /api/imports/defectives         | ✓    | ✗ | ✓ |
   | GET    /api/exports/purchase           | ✓    | ✓ | ✓ |
   | POST/PATCH/DELETE /api/users/*         | ✗    | ✗ | ✓ |
@@ -23,7 +23,7 @@ mirrors the matrix.
 Tests construct a fake asyncpg pool + FastAPI TestClient (no real DB) by
 patching `app.db.pool` and `app.auth.require_role`. The patched
 ``require_role`` honours the requested role: it raises 403 for
-non-matches so admin-only endpoints (users / inventory / imports) behave
+non-matches so admin-only account endpoints behave
 correctly under each role.
 """
 import json
@@ -431,7 +431,7 @@ class RepairCannotDeletePermissionsTests(unittest.TestCase):
 
 
 class ReturnsBulkPermissionsTests(unittest.TestCase):
-    """returns can run every bulk action EXCEPT mark_complete."""
+    """returns can run every bulk action, including mark_complete."""
 
     def _set_role(self, role):
         self.app, self.user = _build_app(role)
@@ -508,16 +508,16 @@ class ReturnsBulkPermissionsTests(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 200, r.text)
 
-    def test_returns_bulk_mark_complete_blocked(self):
-        """mark_complete is still repair/admin only."""
+    def test_returns_bulk_mark_complete_ready(self):
         self._set_role("returns")
         self._set_pre_flight(_mk_item("READY"))
         r = self.client.post(
             "/api/defectives/bulk",
             json={"ids": [42], "action": "mark_complete"},
         )
-        # The new bulk handler raises 403 directly on the action gate.
-        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["succeeded"], 1)
+        self.assertEqual(_audit_details(self.conn, "bulk_complete")["actor_role"], "returns")
 
 
 class RepairCannotBulkPermissionsTests(unittest.TestCase):
@@ -634,7 +634,7 @@ class UsersPermissionsTests(unittest.TestCase):
 
 
 class CompletePermissionsTests(unittest.TestCase):
-    """/complete still requires repair or admin; returns is forbidden."""
+    """All roles may complete READY; returns/admin may manually complete PENDING."""
 
     def _set_role(self, role):
         self.app, self.user = _build_app(role)
@@ -646,11 +646,32 @@ class CompletePermissionsTests(unittest.TestCase):
     def tearDown(self):
         self._pool_patch.stop()
 
-    def test_returns_cannot_complete(self):
+    def test_returns_can_complete_ready(self):
         self._set_role("returns")
         self.conn.fetchrow = AsyncMock(return_value=_mk_item("READY"))
         r = self.client.post("/api/defectives/42/complete")
-        self.assertEqual(r.status_code, 403, r.text)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(_audit_details(self.conn, "'complete'")["actor_role"], "returns")
+
+    def test_returns_can_force_complete_pending_with_audit(self):
+        self._set_role("returns")
+        self.conn.fetchrow = AsyncMock(return_value=_mk_item("PENDING"))
+        r = self.client.post("/api/defectives/42/complete")
+        self.assertEqual(r.status_code, 200, r.text)
+        details = _audit_details(self.conn, "'complete'")
+        self.assertEqual(details["actor_role"], "returns")
+        self.assertEqual(details["previous_status"], "PENDING")
+        self.assertTrue(details["manual_override"])
+
+    def test_returns_can_bulk_complete_pending_with_audit(self):
+        self._set_role("returns")
+        self.conn.fetchrow = AsyncMock(return_value=_mk_item("PENDING"))
+        r = self.client.post("/api/defectives/bulk", json={"ids": [42], "action": "mark_complete"})
+        self.assertEqual(r.status_code, 200, r.text)
+        details = _audit_details(self.conn, "bulk_complete")
+        self.assertEqual(details["actor_role"], "returns")
+        self.assertEqual(details["previous_status"], "PENDING")
+        self.assertTrue(details["manual_override"])
 
     def test_repair_can_complete(self):
         self._set_role("repair")
