@@ -616,6 +616,11 @@ class UsersPermissionsTests(unittest.TestCase):
         r = self.client.delete("/api/users/1")
         self.assertEqual(r.status_code, 403, r.text)
 
+    def test_returns_cannot_reactivate_user(self):
+        self._set_role("returns")
+        r = self.client.post("/api/users/1/reactivate")
+        self.assertEqual(r.status_code, 403, r.text)
+
     def test_repair_cannot_create_user(self):
         self._set_role("repair")
         r = self.client.post("/api/users", json={"name": "x", "role": "repair"})
@@ -631,6 +636,22 @@ class UsersPermissionsTests(unittest.TestCase):
         self.conn.fetch = AsyncMock(return_value=[])
         r = self.client.get("/api/users")
         self.assertEqual(r.status_code, 200, r.text)
+
+    def test_admin_reactivates_inactive_user_with_audit(self):
+        self._set_role("admin")
+        self.conn.fetchrow = AsyncMock(return_value={"id": 7, "name": "worker", "active": False})
+        r = self.client.post("/api/users/7/reactivate")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["active"], True)
+        calls = [call.args[0] for call in self.conn.execute.call_args_list]
+        self.assertTrue(any("UPDATE users SET active=TRUE" in query for query in calls))
+        self.assertTrue(any("'reactivate'" in query for query in calls))
+
+    def test_admin_reactivate_missing_user(self):
+        self._set_role("admin")
+        self.conn.fetchrow = AsyncMock(return_value=None)
+        r = self.client.post("/api/users/7/reactivate")
+        self.assertEqual(r.status_code, 404, r.text)
 
 
 class CompletePermissionsTests(unittest.TestCase):

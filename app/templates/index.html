@@ -2127,6 +2127,7 @@
                   <td style="text-align:right;">
                     <button @click="showToken(u.name)" class="btn" style="margin-right:.25rem;">Token</button>
                     <button x-show="u.active && user && u.id !== user.id" @click="deactivateUser(u.id, u.name)" class="btn btn-danger">删除账户</button>
+                    <button x-show="!u.active" @click="reactivateUser(u.id, u.name)" class="btn">重新启用</button>
                   </td>
                 </tr>
               </template>
@@ -3520,6 +3521,16 @@ function app() {
         await this.loadUsers();
       } catch (e) {
         alert(e.message || '失败');
+      }
+    },
+
+    async reactivateUser(id, name) {
+      if (!confirm('确认重新启用账户 ' + name + '？该账户将恢复登录权限。')) return;
+      try {
+        await this.api('/api/users/' + id + '/reactivate', { method: 'POST' });
+        await this.loadUsers();
+      } catch (e) {
+        alert(e.message || '重新启用失败');
       }
     },
 

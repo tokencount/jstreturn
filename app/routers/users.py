@@ -194,6 +194,27 @@ async def deactivate_user(
     return {"id": user_id, "name": existing["name"], "active": False}
 
 
+@router.post("/{user_id}/reactivate")
+async def reactivate_user(user_id: int, actor: dict = admin_required):
+    """Restore a soft-deactivated account without changing its role or history."""
+    async with pool().acquire() as conn:
+        async with conn.transaction():
+            existing = await conn.fetchrow(
+                "SELECT id, name, active FROM users WHERE id=$1 FOR UPDATE", user_id,
+            )
+            if existing is None:
+                raise HTTPException(404, "user not found")
+            if existing["active"]:
+                return {"id": user_id, "name": existing["name"], "active": True, "noop": True}
+            await conn.execute("UPDATE users SET active=TRUE WHERE id=$1", user_id)
+            await conn.execute(
+                "INSERT INTO audit_log (user_id, action, entity_type, entity_id) "
+                "VALUES ($1, 'reactivate', 'user', $2)",
+                actor["id"], user_id,
+            )
+    return {"id": user_id, "name": existing["name"], "active": True}
+
+
 # Token helper endpoint — admin-only, lets admin look up or compute a token.
 @router.get("/token-for/{name}")
 async def token_for(name: str, actor: dict = admin_required):
