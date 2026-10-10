@@ -1248,7 +1248,6 @@
       <div class="row gap-sm">
         
         <span x-show="user" class="badge" x-text="user ? (user.name + ' (' + user.role + ')') : ''"></span>
-        <button x-show="user" @click="window.location.href='/change-password'" class="btn">改密码</button>
         <button x-show="user" @click="logout()" class="btn">退出</button>
       </div>
     </div>
@@ -2075,10 +2074,10 @@
       <div class="panel">
         <div class="panel-title">账号管理</div>
         <p style="font-size:.875rem; color:var(--fg-3); margin:0 0 .75rem;">
-          创建账号并绑定 DingTalk 员工 ID。returns 除账号管理外拥有全部操作权限。
+          创建账号，分配角色（returns 录入 / repair 维修 / admin 全权）。
         </p>
 
-        <form @submit.prevent="createUser()" class="form-grid-3" style="grid-template-columns: 2fr 1fr 1.5fr 1.5fr auto;">
+        <form @submit.prevent="createUser()" class="form-grid-3" style="grid-template-columns: 2fr 1fr 1.5fr auto;">
           <div>
             <label>姓名</label>
             <input x-model="userForm.name" required placeholder="e.g. wangmei" />
@@ -2096,10 +2095,6 @@
             <input x-model.number="userForm.telegram_id" type="number" />
           </div>
           <div>
-            <label>DingTalk 员工 ID</label>
-            <input x-model="userForm.dingtalk_user_id" :required="userForm.role !== 'admin'" placeholder="userid（非姓名）" />
-          </div>
-          <div>
             <label>&nbsp;</label>
             <button type="submit" class="btn btn-primary">创建</button>
           </div>
@@ -2110,7 +2105,7 @@
           <h3 style="font-size:1rem; margin:0 0 .5rem;">现有账号</h3>
           <table>
             <thead>
-              <tr><th>ID</th><th>姓名</th><th>角色</th><th>状态</th><th>Telegram</th><th>DingTalk 员工 ID</th><th>创建</th><th></th></tr>
+              <tr><th>ID</th><th>姓名</th><th>角色</th><th>状态</th><th>Telegram</th><th>创建</th><th></th></tr>
             </thead>
             <tbody>
               <template x-for="u in users" :key="u.id">
@@ -2128,12 +2123,9 @@
                     <span :style="u.active ? 'color:var(--green)' : 'color:var(--fg-3)'" x-text="u.active ? 'active' : 'inactive'"></span>
                   </td>
                   <td style="font-size:.75rem; color:var(--fg-3);" x-text="u.telegram_id || '—'"></td>
-                  <td><input :value="u.dingtalk_user_id || ''" @change="updateUserDingtalkId(u.id, $event.target.value)" placeholder="未绑定" style="min-width:8rem;" /></td>
                   <td style="font-size:.75rem; color:var(--fg-3);" x-text="(u.created_at || '').slice(0, 10)"></td>
                   <td style="text-align:right;">
-                    <button x-show="u.must_change_password" @click="showToken(u.name)" class="btn" style="margin-right:.25rem;">初始 Token</button>
-                    <button x-show="!u.must_change_password" @click="resetUserPassword(u.id, u.name)" class="btn" style="margin-right:.25rem;">重设密码</button>
-                    <button x-show="u.active && u.dingtalk_user_id" @click="deactivateEmployeeAccounts(u.dingtalk_user_id)" class="btn btn-danger" style="margin-right:.25rem;">停用该员工全部账号</button>
+                    <button @click="showToken(u.name)" class="btn" style="margin-right:.25rem;">Token</button>
                     <button x-show="u.active && user && u.id !== user.id" @click="deactivateUser(u.id, u.name)" class="btn btn-danger">删除账户</button>
                   </td>
                 </tr>
@@ -2144,7 +2136,7 @@
             <div><b x-text="(tokenInfo && tokenInfo.name) || ''"></b> 的登录 Token：</div>
             <code x-text="(tokenInfo && tokenInfo.token) || ''"></code>
             <div style="font-size:.75rem; color:var(--fg-3); margin-top:.25rem;">
-              只用于首次登录；当事人必须立即设置个人密码。
+              把这个 Token 给当事人，让他们直接登录。
             </div>
           </div>
         </div>
@@ -2752,7 +2744,7 @@ function app() {
     lookupResults: [],
     imagePreview: { open: false, url: '', code: '' },
     users: [],
-    userForm: { name: '', role: 'returns', telegram_id: null, dingtalk_user_id: '' },
+    userForm: { name: '', role: 'returns', telegram_id: null },
     userCreateMsg: '',
     userCreateOk: false,
     tokenInfo: null,
@@ -2780,10 +2772,6 @@ function app() {
         const r = await fetch('/api/auth/me', { credentials: 'include' });
         if (r.ok) {
           this.user = await r.json();
-          if (this.user.must_change_password) {
-            window.location.replace('/change-password');
-            return;
-          }
         } else if (_isFixture) {
           // Fixture mode: assume the requested role so the rest of the page renders.
           this.user = { id: 1, name: 'fixture', role: _fixtureRole };
@@ -3507,7 +3495,7 @@ function app() {
         const r = await this.api('/api/users', { method: 'POST', body: JSON.stringify(this.userForm) });
         this.userCreateMsg = '✓ 已创建/更新 #' + r.id + ' (' + r.role + ')';
         this.userCreateOk = true;
-        this.userForm.name = ''; this.userForm.telegram_id = null; this.userForm.dingtalk_user_id = '';
+        this.userForm.name = ''; this.userForm.telegram_id = null;
         await this.loadUsers();
       } catch (e) {
         this.userCreateMsg = '✗ ' + (e.message || '失败');
@@ -3523,36 +3511,6 @@ function app() {
         alert(e.message || '失败');
         this.loadUsers();
       }
-    },
-
-    async updateUserDingtalkId(id, dingtalk_user_id) {
-      try {
-        await this.api('/api/users/' + id, { method: 'PATCH', body: JSON.stringify({ dingtalk_user_id }) });
-        await this.loadUsers();
-      } catch (e) {
-        alert(e.message || '保存 DingTalk ID 失败');
-        this.loadUsers();
-      }
-    },
-
-    async resetUserPassword(id, name) {
-      if (!confirm('重设 ' + name + ' 的密码？旧密码将失效，须重新使用初始 Token 登录。')) return;
-      try {
-        await this.api('/api/users/' + id + '/reset-password', { method: 'POST' });
-        await this.loadUsers();
-        await this.showToken(name);
-      } catch (e) { alert(e.message || '重设失败'); }
-    },
-
-    async deactivateEmployeeAccounts(dingtalk_user_id) {
-      if (!confirm('停用 DingTalk 员工 ' + dingtalk_user_id + ' 绑定的全部 jstreturn 账号？')) return;
-      try {
-        const result = await this.api('/api/users/_/deactivate-employee', {
-          method: 'POST', body: JSON.stringify({ dingtalk_user_id }),
-        });
-        alert('已停用 ' + result.deactivated + ' 个账号');
-        await this.loadUsers();
-      } catch (e) { alert(e.message || '停用失败'); }
     },
 
     async deactivateUser(id, name) {

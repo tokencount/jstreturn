@@ -108,11 +108,6 @@ async def login_page(request: Request):
         )
 
 
-@app.get("/change-password", response_class=HTMLResponse)
-async def change_password_page(request: Request):
-    return templates.TemplateResponse(request, "change_password.html", {})
-
-
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     try:
