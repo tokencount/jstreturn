@@ -1217,6 +1217,26 @@
     .pallet-pick th, .pallet-pick td { padding: .5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     .pallet-pick .scroll-table { overflow-x: auto; }
     .pallet-pick h3 { margin: 1.4rem 0 .5rem; }
+    .pallet-pick .pick-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; margin: .75rem 0; }
+    .pallet-pick .pick-toolbar input { flex: 1 1 16rem; width: auto; min-width: 0; }
+    .pallet-pick .pick-toolbar .btn { flex: none; }
+    .pallet-pick .pick-section-head { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; margin: 1.4rem 0 .5rem; }
+    .pallet-pick .pick-section-head h3 { margin: 0; }
+    .pallet-pick .pick-select-all { display: inline-flex; align-items: center; gap: .4rem; width: auto; margin: 0; cursor: pointer; }
+    .pallet-pick input[type="checkbox"] { width: 1rem; height: 1rem; min-width: 1rem; padding: 0; margin: 0; vertical-align: middle; cursor: pointer; }
+    .pallet-pick .pick-select-col { width: 3.5rem; text-align: center; }
+    .pallet-pick .pick-rank-list { display: grid; gap: .4rem; margin-top: .75rem; }
+    .pallet-pick .pick-rank-row { display: grid; grid-template-columns: minmax(6rem, 1fr) 5rem 9rem auto; align-items: center; gap: .75rem; width: 100%; padding: .75rem; border: 1px solid var(--line); border-radius: .5rem; background: var(--panel); color: var(--fg); text-align: left; cursor: pointer; }
+    .pallet-pick .pick-rank-row:hover { border-color: var(--brand); background: var(--brand-soft); }
+    .pallet-pick .pick-rank-rate { color: var(--green); font-weight: 700; }
+    @media screen and (max-width: 600px) {
+      .pallet-pick .pick-toolbar input { flex-basis: 100%; }
+      .pallet-pick .pick-select-col { width: 3rem; }
+      .pallet-pick .scroll-table table { min-width: 680px; }
+      .pallet-pick .pick-rank-row { grid-template-columns: 1fr auto; gap: .25rem .75rem; }
+      .pallet-pick .pick-rank-row .pick-rank-count { grid-column: 1; }
+      .pallet-pick .pick-rank-row .pick-rank-open { grid-column: 2; grid-row: 1 / span 2; }
+    }
     @page { size: A4 portrait; margin: 12mm; }
     @media print {
       body { background: #fff; }
@@ -1343,23 +1363,43 @@
       <section id="pallet-pick" class="pallet-pick panel repair-only" x-show="tab==='pallet-pick'" x-cloak>
         <h2>Pallet READY 拣货单</h2>
         <button x-show="user && user.role==='repair'" class="btn no-print" @click="goTab('ready')">返回 READY</button>
-        <div class="row gap-sm no-print" style="flex-wrap:wrap; margin:.75rem 0;">
-          <input x-model="palletPickNo" @keydown.enter="loadPalletPick()" placeholder="输入 Pallet 编号" aria-label="Pallet 编号" style="padding:.6rem; min-width:12rem;" />
+        <div class="pick-toolbar no-print">
+          <input x-model="palletPickNo" @input="onPalletPickInput()" @keydown.enter="loadPalletPick()" placeholder="输入 Pallet 编号" aria-label="Pallet 编号" />
           <button class="btn btn-primary" @click="loadPalletPick()" :disabled="palletPickBusy">查询</button>
+          <button class="btn" x-show="palletPickNo || palletPickData" @click="clearPalletPick()">清空</button>
           <button class="btn" @click="printPalletPick()" :disabled="palletPickBusy || !palletPickSelected.length">打印 A4 / 存 PDF</button>
         </div>
         <p x-show="palletPickError" class="alert alert-warn no-print" x-text="palletPickError"></p>
+        <div x-show="!palletPickData" class="no-print">
+          <h3>可维修率最高的 Pallet</h3>
+          <p style="font-size:.82rem; margin:.25rem 0;">可维修率 = READY ÷ (READY + PENDING)，不含已完成。点击 Pallet 查看拣货单。</p>
+          <p x-show="palletRankBusy">加载中…</p>
+          <p x-show="palletRankError" class="alert alert-warn" x-text="palletRankError"></p>
+          <div class="pick-rank-list">
+            <template x-for="pallet in palletRanked" :key="pallet.pallet_no">
+              <button type="button" class="pick-rank-row" @click="openRankedPallet(pallet.pallet_no)">
+                <b x-text="'Pallet ' + pallet.pallet_no"></b>
+                <span class="pick-rank-rate" x-text="pallet.ready_percent + '%'"></span>
+                <span class="pick-rank-count" x-text="'READY ' + pallet.ready_count + ' / PENDING ' + pallet.pending_count"></span>
+                <span class="pick-rank-open">查看 ›</span>
+              </button>
+            </template>
+          </div>
+          <p x-show="!palletRankBusy && !palletRankError && !palletRanked.length">暂无可维修的 Pallet。</p>
+        </div>
         <template x-if="palletPickData">
           <div>
             <p><b>Pallet <span x-text="palletPickData.pallet_no"></span></b> · READY <span x-text="palletPickData.counts.READY"></span> · PENDING <span x-text="palletPickData.counts.PENDING"></span> · COMPLETED <span x-text="palletPickData.counts.COMPLETED"></span></p>
             <p style="font-size:.82rem;">库存/数据截至 <span x-text="new Date(palletPickData.generated_at).toLocaleString()"></span> · 打印不扣库存、不改变状态</p>
-            <h3>可维修成品 · 已选 <span x-text="palletPickSelected.length"></span> 条</h3>
-            <label class="no-print"><input type="checkbox" :checked="palletPickSelected.length === palletPickData.ready_items.length && palletPickSelected.length > 0" @change="setAllPalletPick($event.target.checked)" /> 全选 READY</label>
-            <div class="scroll-table"><table><thead><tr><th class="no-print">选择</th><th>单号</th><th>成品 SKU / 名称</th><th>数量</th><th>次品位置</th><th>所需配件</th></tr></thead>
+            <div class="pick-section-head">
+              <h3>可维修成品 · 已选 <span x-text="palletPickSelected.length"></span> 条</h3>
+              <label class="pick-select-all no-print"><input type="checkbox" :checked="palletPickSelected.length === palletPickData.ready_items.length && palletPickSelected.length > 0" @change="setAllPalletPick($event.target.checked)" /><span>全选 READY</span></label>
+            </div>
+            <div class="scroll-table"><table><thead><tr><th class="pick-select-col no-print">选择</th><th>单号</th><th>成品 SKU / 名称</th><th>数量</th><th>次品位置</th><th>所需配件</th></tr></thead>
               <tbody>
                 <template x-for="it in palletPickData.ready_items" :key="it.id">
                   <tr :class="!palletPickSelected.includes(it.id) && 'pick-unselected'">
-                    <td class="no-print"><input type="checkbox" :checked="palletPickSelected.includes(it.id)" @change="togglePalletPick(it.id, $event.target.checked)" /></td>
+                    <td class="pick-select-col no-print"><input type="checkbox" :checked="palletPickSelected.includes(it.id)" @change="togglePalletPick(it.id, $event.target.checked)" /></td>
                     <td x-text="'#' + it.id"></td><td><b x-text="it.sku"></b><br><span x-text="it.product_name || ''"></span></td>
                     <td x-text="it.qty"></td><td x-text="it.location || '—'"></td>
                     <td><template x-for="(part, n) in it.parts" :key="n"><div><span x-text="part.part_code"></span> × <span x-text="part.qty"></span></div></template></td>
@@ -2539,6 +2579,40 @@ function app() {
     palletPickSelected: [],
     palletPickBusy: false,
     palletPickError: '',
+    palletPickRequestId: 0,
+    palletRanked: [],
+    palletRankBusy: false,
+    palletRankError: '',
+    palletRankRequestId: 0,
+    async loadRankedPallets() {
+      const requestId = ++this.palletRankRequestId;
+      this.palletRankBusy = true;
+      this.palletRankError = '';
+      try {
+        const result = await this.api('/api/pallet-pick/_/ranked');
+        if (requestId === this.palletRankRequestId) this.palletRanked = result.pallets || [];
+      } catch (e) {
+        if (requestId === this.palletRankRequestId) this.palletRankError = '榜单加载失败：' + e.message;
+      } finally {
+        if (requestId === this.palletRankRequestId) this.palletRankBusy = false;
+      }
+    },
+    clearPalletPick() {
+      ++this.palletPickRequestId;
+      this.palletPickNo = '';
+      this.palletPickData = null;
+      this.palletPickSelected = [];
+      this.palletPickBusy = false;
+      this.palletPickError = '';
+      this.loadRankedPallets();
+    },
+    onPalletPickInput() {
+      if (!String(this.palletPickNo || '').trim()) this.clearPalletPick();
+    },
+    openRankedPallet(palletNo) {
+      this.palletPickNo = palletNo;
+      this.loadPalletPick();
+    },
     get palletPickParts() {
       if (!this.palletPickData) return [];
       const selected = new Set(this.palletPickSelected);
@@ -2556,18 +2630,21 @@ function app() {
     },
     async loadPalletPick() {
       const pallet = String(this.palletPickNo || '').trim();
-      if (!pallet) { this.palletPickError = '请输入 Pallet 编号'; return; }
+      if (!pallet) { this.clearPalletPick(); return; }
+      const requestId = ++this.palletPickRequestId;
       this.palletPickBusy = true;
       this.palletPickError = '';
       try {
         const data = await this.api('/api/pallet-pick/' + encodeURIComponent(pallet));
+        if (requestId !== this.palletPickRequestId) return;
         this.palletPickData = data;
         this.palletPickSelected = data.ready_items.map(it => it.id);
       } catch (e) {
+        if (requestId !== this.palletPickRequestId) return;
         this.palletPickData = null;
         this.palletPickSelected = [];
         this.palletPickError = e.message.includes('404') ? '找不到该 Pallet' : '查询失败：' + e.message;
-      } finally { this.palletPickBusy = false; }
+      } finally { if (requestId === this.palletPickRequestId) this.palletPickBusy = false; }
     },
     setAllPalletPick(checked) {
       this.palletPickSelected = checked ? this.palletPickData.ready_items.map(it => it.id) : [];
@@ -3132,6 +3209,7 @@ function app() {
       this.sortKey = name === 'history' ? 'completed_at' : 'business_date';
       this.sortDir = 'desc';
       if (name === 'ready') this.loadList('READY');
+      else if (name === 'pallet-pick' && !this.palletPickData) this.loadRankedPallets();
       else if (name === 'pending') this.loadList('PENDING');
       else if (name === 'history') this.loadList('COMPLETED');
       else if (name === 'purchase') {

@@ -15,6 +15,45 @@ from app.matcher import _rebuild_plan_with_breakdown
 router = APIRouter(prefix="/api/pallet-pick", tags=["pallet-pick"])
 
 
+@router.get("/_/ranked")
+async def ranked_pallets(user: dict = Depends(current_user)):
+    """Top active pallets by READY / (READY + PENDING), excluding completed."""
+    await _rebuild_plan_with_breakdown()
+    async with pool().acquire() as conn:
+        rows = await conn.fetch(
+            """
+            WITH pallet_counts AS (
+                SELECT pallet_no,
+                       COUNT(*) FILTER (WHERE status = 'READY')::int AS ready_count,
+                       COUNT(*) FILTER (WHERE status = 'PENDING')::int AS pending_count,
+                       COUNT(*) FILTER (WHERE status = 'COMPLETED')::int AS completed_count,
+                       MIN(business_date) FILTER (WHERE status IN ('READY', 'PENDING')) AS oldest_date
+                FROM defective_items
+                GROUP BY pallet_no
+            )
+            SELECT pallet_no, ready_count, pending_count, completed_count
+            FROM pallet_counts
+            WHERE ready_count > 0
+            ORDER BY ready_count::numeric / (ready_count + pending_count) DESC,
+                     ready_count DESC, oldest_date ASC, pallet_no ASC
+            LIMIT 20
+            """
+        )
+    return {
+        "denominator": "READY+PENDING",
+        "pallets": [
+            {
+                "pallet_no": row["pallet_no"],
+                "ready_count": row["ready_count"],
+                "pending_count": row["pending_count"],
+                "completed_count": row["completed_count"],
+                "ready_percent": round(100 * row["ready_count"] / (row["ready_count"] + row["pending_count"]), 1),
+            }
+            for row in rows
+        ],
+    }
+
+
 @router.get("/{pallet_no}")
 async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)):
     pallet_no = pallet_no.strip()

@@ -86,3 +86,28 @@ def test_missing_pallet_is_404_and_signature_changes_with_qty():
         conn.rows = [row(10, "READY", "P-001", 3, 1)]
         second = client.get("/api/pallet-pick/6601").json()["signature"]
     assert first != second
+
+
+def test_ranked_pallets_excludes_completed_from_rate():
+    conn = FakeConn([{
+        "pallet_no": "8813", "ready_count": 6,
+        "pending_count": 8, "completed_count": 10,
+    }], [])
+    with patch.object(pallet_pick, "pool", return_value=FakePool(conn)), patch.object(
+        pallet_pick, "_rebuild_plan_with_breakdown", new_callable=AsyncMock
+    ) as rebuild:
+        response = client_for(conn).get("/api/pallet-pick/_/ranked")
+    assert response.status_code == 200
+    assert response.json() == {
+        "denominator": "READY+PENDING",
+        "pallets": [{
+            "pallet_no": "8813", "ready_count": 6,
+            "pending_count": 8, "completed_count": 10,
+            "ready_percent": 42.9,
+        }],
+    }
+    sql = conn.queries[0][0]
+    assert "WHERE ready_count > 0" in sql
+    assert "ready_count::numeric / (ready_count + pending_count) DESC" in sql
+    assert "oldest_date ASC, pallet_no ASC" in sql
+    rebuild.assert_awaited_once()
