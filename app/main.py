@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db import close_pool, init_pool
-from app.routers import auth, cron, defectives, exports, imports, inventory, spx, users
+from app.routers import auth, cron, defectives, exports, imports, inventory, pallet_pick, spx, users
 
 VERSION = "0.1.0"
 # 1x1 transparent PNG, inlined so browsers don't 404 on /favicon.ico.
@@ -58,6 +58,7 @@ app = FastAPI(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(defectives.router)
+app.include_router(pallet_pick.router)
 app.include_router(imports.router)
 app.include_router(inventory.router)
 app.include_router(exports.router)
