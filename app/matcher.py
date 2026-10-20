@@ -16,6 +16,28 @@ from typing import Iterable, Mapping, Optional
 from app.db import pool
 
 
+# READY reservations can only be fulfilled from E locations. Keep the
+# snapshot's all-warehouse total for inventory reporting, not allocation.
+# Legacy snapshot-only rows qualify only when their recorded location is E.
+ELIGIBLE_INVENTORY_SQL = """
+    SELECT s.part_code,
+           CASE WHEN loc.part_code IS NOT NULL THEN loc.e_qty
+                WHEN UPPER(LEFT(BTRIM(COALESCE(s.location, '')), 1)) = 'E'
+                THEN GREATEST(s.on_hand_qty, 0)
+                ELSE 0 END::int AS on_hand_qty
+    FROM inventory_snapshot s
+    LEFT JOIN (
+        SELECT part_code,
+               COALESCE(SUM(qty) FILTER (
+                   WHERE UPPER(LEFT(BTRIM(COALESCE(location, '')), 1)) = 'E'
+                     AND qty > 0
+               ), 0)::int AS e_qty
+        FROM inventory_locations
+        GROUP BY part_code
+    ) loc ON loc.part_code = s.part_code
+"""
+
+
 def _demands(parts: Iterable[Mapping]) -> dict[str, int]:
     """Merge duplicate part codes belonging to one defective item."""
     out: dict[str, int] = defaultdict(int)
@@ -150,9 +172,7 @@ async def reevaluate_all_pending_ready() -> dict:
                 GROUP BY di.id, di.pallet_no, di.status, di.created_at
                 """
             )
-            inventory_rows = await conn.fetch(
-                "SELECT part_code, on_hand_qty FROM inventory_snapshot"
-            )
+            inventory_rows = await conn.fetch(ELIGIBLE_INVENTORY_SQL)
 
             items = []
             for row in item_rows:
@@ -231,7 +251,8 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
         plan_index, inventory_map = await _rebuild_plan_with_breakdown()
 
     sql = """
-        WITH parts_agg AS (
+        WITH e_stock AS (""" + ELIGIBLE_INVENTORY_SQL + """),
+        parts_agg AS (
             SELECT
                 dp.defective_id,
                 json_agg(json_build_object(
@@ -242,7 +263,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
                     'short', GREATEST(dp.qty - COALESCE(i.on_hand_qty, 0), 0)
                 ) ORDER BY dp.id) AS parts
             FROM defective_parts dp
-            LEFT JOIN inventory_snapshot i ON i.part_code = dp.part_code
+            LEFT JOIN e_stock i ON i.part_code = dp.part_code
             GROUP BY dp.defective_id
         )
         SELECT
@@ -275,8 +296,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
     # Pre-fetch the per-(part_code, location) breakdown for every distinct
     # part_code that will appear in this page. ``inventory_locations`` may
     # have multiple rows per part_code (different warehouses); the UI shows
-    # the full list beside the part_code, the matcher still uses the
-    # aggregated ``inventory_snapshot.on_hand_qty`` for reservation math.
+    # the full list beside the part_code, while reservations use E stock only.
     part_codes: set[str] = set()
     for row in rows:
         parts = row.get("parts")
@@ -305,7 +325,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
             slot = per_part.get(p["part_code"]) or {}
             stock = int(p.get("have") or 0)
             if "stock" in slot and slot["stock"] != stock:
-                # Prefer the inventory_snapshot value from the plan for consistency.
+                # Prefer the E-eligible value from the reservation plan.
                 stock = int(slot["stock"])
             need = int(p.get("need") or 0)
             globally_reserved = int(slot.get("reserved") or 0)
@@ -329,10 +349,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
             p["reason"] = _allocation_reason(item["status"], need, stock, reserved, available, missing)
             p["ready"] = item["status"] == "READY"
             # Per-(part_code, location) breakdown from the inventory_locations
-            # child table. Empty list is fine — single-location legacy data
-            # is still represented by a single empty-row aggregate in the
-            # snapshot table, and the UI hides the locations sub-list when
-            # there is only one bucket (or none).
+            # child table. Legacy snapshot-only rows have no location chips.
             p["inventory_locations"] = locations_by_code.get(p["part_code"], [])
         out.append(item)
     return out
@@ -374,9 +391,7 @@ async def _rebuild_plan_with_breakdown() -> tuple[dict[int, dict[str, dict[str, 
                 GROUP BY di.id, di.pallet_no, di.status, di.created_at
                 """
             )
-            inventory_rows = await conn.fetch(
-                "SELECT part_code, on_hand_qty FROM inventory_snapshot"
-            )
+            inventory_rows = await conn.fetch(ELIGIBLE_INVENTORY_SQL)
             items = []
             for row in item_rows:
                 item = dict(row)

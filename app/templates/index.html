@@ -1236,10 +1236,18 @@
     .pallet-pick .pick-status.PENDING { color: #991b1b; background: #fee2e2; }
     .pallet-pick .pick-part-line { display: flex; flex-wrap: wrap; gap: .25rem .6rem; }
     .pallet-pick .pick-part-line .code { font-family: ui-monospace, monospace; font-weight: 600; }
+    .pallet-pick .pick-products table { table-layout: fixed; }
+    .pallet-pick .pick-products th:nth-child(1) { width: 4rem; }
+    .pallet-pick .pick-products th:nth-child(2) { width: 6.5rem; }
+    .pallet-pick .pick-products th:nth-child(3) { width: 10rem; }
+    .pallet-pick .pick-products th:nth-child(4) { width: 18rem; }
+    .pallet-pick .pick-products td { overflow-wrap: anywhere; }
+    .pallet-pick .pick-products tbody tr:nth-child(even) { background: #f8fafc; }
     .pallet-pick .print-only { display: none; }
     @media screen and (max-width: 600px) {
       .pallet-pick .pick-toolbar input { flex-basis: 100%; }
       .pallet-pick .scroll-table table { min-width: 0; }
+      .pallet-pick .pick-products table { table-layout: auto; }
       .pallet-pick .scroll-table thead { display: none; }
       .pallet-pick .scroll-table tbody,
       .pallet-pick .scroll-table tr { display: block; }
@@ -1247,6 +1255,7 @@
       .pallet-pick .scroll-table td { display: flex; align-items: flex-start; gap: .55rem; width: 100%; padding: .3rem 0; border: 0; overflow-wrap: anywhere; }
       .pallet-pick .scroll-table td::before { content: attr(data-label); flex: 0 0 5.4rem; color: var(--fg-3); font-size: .82rem; }
       .pallet-pick .scroll-table td.pick-select-col { text-align: left; }
+      .pallet-pick .scroll-table td.pick-not-ready { display: none; }
       .pallet-pick .pick-rank-row { grid-template-columns: 1fr auto; gap: .25rem .75rem; }
       .pallet-pick .pick-rank-row .pick-rank-count { grid-column: 1; }
       .pallet-pick .pick-rank-row .pick-rank-open { grid-column: 2; grid-row: 1 / span 2; }
@@ -1431,7 +1440,7 @@
                 <tbody>
                   <template x-for="it in palletPickData.active_items" :key="it.id">
                     <tr>
-                      <td class="pick-select-col no-print" data-label="选拣" x-show="it.status==='READY'"><input type="checkbox" :checked="palletPickSelected.includes(it.id)" @change="togglePalletPick(it.id, $event.target.checked)" /></td>
+                      <td class="pick-select-col no-print" data-label="选拣" :class="it.status==='READY' ? '' : 'pick-not-ready'"><input x-show="it.status==='READY'" type="checkbox" :checked="palletPickSelected.includes(it.id)" @change="togglePalletPick(it.id, $event.target.checked)" /></td>
                       <td data-label="状态"><span class="pick-status" :class="it.status" x-text="it.status"></span></td>
                       <td data-label="SKU" :title="'#' + it.id" x-text="it.sku"></td>
                       <td data-label="所需配件"><template x-for="(part, n) in it.parts" :key="n"><div class="pick-part-line"><span class="code" x-text="part.part_code"></span><span x-text="'×' + part.qty"></span></div></template></td>
