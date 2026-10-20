@@ -49,6 +49,7 @@ def row(id, status, code, qty, part_id):
         "qty": 1, "status": status, "part_id": part_id,
         "part_code": code, "part_name": "螺丝", "part_qty": qty,
         "stock_part_name": "螺丝", "stock_location": "66-A-1",
+        "stock_qty": 20,
         "stock_updated_at": datetime(2026, 10, 20, tzinfo=timezone.utc),
     }
 
@@ -67,6 +68,9 @@ def test_whole_pallet_ready_pick_aggregates_and_excludes_pending():
     data = response.json()
     assert data["counts"] == {"READY": 2, "PENDING": 1, "COMPLETED": 1}
     assert [it["id"] for it in data["ready_items"]] == [10, 11]
+    assert [it["id"] for it in data["active_items"]] == [10, 11, 12]
+    assert data["active_items"][2]["status"] == "PENDING"
+    assert data["pallet_locations"] == ["R-1"]
     assert data["pick_parts"][0]["qty"] == 5
     assert data["pick_parts"][0]["item_ids"] == [10, 11]
     assert data["pick_parts"][0]["locations"] == [{"location": "66-A-1", "qty": 20}]

@@ -49,6 +49,7 @@ class DefectivePatch(BaseModel):
     location: Optional[str] = None
     sku: Optional[str] = Field(None, min_length=1, max_length=80)
     qty: Optional[int] = Field(None, gt=0)
+    sync_location: bool = False  # when location changes, apply it to this pallet's READY/PENDING items
 
 
 @router.post("")
@@ -152,8 +153,11 @@ async def patch_defective(
     values: list = []
     idx = 1
     body = payload.model_dump(exclude_unset=True)
+    sync_location = bool(body.pop("sync_location", False))
     if not body:
         raise HTTPException(400, "no fields to update")
+    if sync_location and "location" not in body:
+        raise HTTPException(400, "sync_location requires location")
     for k in ("business_date", "pallet_no", "product_name", "location", "sku", "qty"):
         if k in body:
             fields.append(f"{k} = ${idx}")
@@ -163,30 +167,42 @@ async def patch_defective(
     set_clause = ", ".join(fields) + f", updated_at = NOW()"
 
     async with pool().acquire() as conn:
-        current = await conn.fetchrow(
-            "SELECT status FROM defective_items WHERE id=$1", defective_id
-        )
-        if current is None:
-            raise HTTPException(404, "not found")
-        # returns / admin can patch on every status, including COMPLETED.
-        # The flow gate is on /complete (which allows all roles), not on
-        # header edits — returns still needs to be able to fix mistyped
-        # SKUs after the fact.
-        row = await conn.fetchrow(
-            f"UPDATE defective_items SET {set_clause} WHERE id = ${idx} RETURNING id, business_date, pallet_no, product_name, location, sku, qty, status",
-            *values,
-        )
-        if row is None:
-            raise HTTPException(404, "not found")
-        # Audit: log which fields changed (include actor role for forensics).
-        await conn.execute(
-            """
-            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
-            VALUES ($1, 'patch', 'defective_item', $2, $3::jsonb)
-            """,
-            user["id"], defective_id,
-            _json.dumps({"fields": list(body.keys()), "actor_role": user["role"]}),
-        )
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                "SELECT status, pallet_no FROM defective_items WHERE id=$1 FOR UPDATE", defective_id
+            )
+            if current is None:
+                raise HTTPException(404, "not found")
+            if sync_location and str(current["status"]) not in ("READY", "PENDING"):
+                raise HTTPException(409, "only READY/PENDING can sync pallet location")
+            if sync_location and body.get("pallet_no", current["pallet_no"]) != current["pallet_no"]:
+                raise HTTPException(400, "cannot change pallet and sync location together")
+            # returns / admin can patch on every status, including COMPLETED.
+            row = await conn.fetchrow(
+                f"UPDATE defective_items SET {set_clause} WHERE id = ${idx} RETURNING id, business_date, pallet_no, product_name, location, sku, qty, status",
+                *values,
+            )
+            if row is None:
+                raise HTTPException(404, "not found")
+            synced_count = 0
+            if sync_location:
+                others = await conn.fetch(
+                    """
+                    UPDATE defective_items SET location=$1, updated_at=NOW()
+                    WHERE pallet_no=$2 AND id<>$3 AND status IN ('READY', 'PENDING')
+                    RETURNING id
+                    """, body["location"], current["pallet_no"], defective_id,
+                )
+                synced_count = len(others) + 1
+            await conn.execute(
+                """
+                INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                VALUES ($1, 'patch', 'defective_item', $2, $3::jsonb)
+                """,
+                user["id"], defective_id,
+                _json.dumps({"fields": list(body.keys()), "actor_role": user["role"],
+                             "sync_pallet_location": sync_location, "synced_count": synced_count}),
+            )
 
     # Re-evaluate status since sku/qty changes can flip READY/PENDING.
     try:
@@ -194,7 +210,7 @@ async def patch_defective(
     except Exception:
         status = row["status"]
 
-    return {**dict(row), "status": status}
+    return {**dict(row), "status": status, "synced_count": synced_count}
 
 
 @router.put("/{defective_id}/parts")

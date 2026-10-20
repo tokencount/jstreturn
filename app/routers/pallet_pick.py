@@ -70,7 +70,8 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
                        di.sku, di.product_name, di.qty, di.status,
                        dp.id AS part_id, dp.part_code, dp.part_name,
                        dp.qty AS part_qty, i.part_name AS stock_part_name,
-                       i.location AS stock_location, i.updated_at AS stock_updated_at
+                       i.location AS stock_location, i.on_hand_qty AS stock_qty,
+                       i.updated_at AS stock_updated_at
                 FROM defective_items di
                 LEFT JOIN defective_parts dp ON dp.defective_id = di.id
                 LEFT JOIN inventory_snapshot i ON i.part_code = dp.part_code
@@ -98,11 +99,11 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
         if rid not in items:
             status = str(row["status"])
             counts[status] += 1
-            if status == "READY":
+            if status in ("READY", "PENDING"):
                 items[rid] = {
                     "id": rid, "business_date": row["business_date"].isoformat() if row["business_date"] else None,
                     "sku": row["sku"], "product_name": row["product_name"],
-                    "qty": int(row["qty"]), "location": row["location"], "parts": [],
+                    "qty": int(row["qty"]), "location": row["location"], "status": status, "parts": [],
                 }
             else:
                 items[rid] = None
@@ -110,12 +111,15 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
             continue
         code = row["part_code"]
         qty = int(row["part_qty"])
-        items[rid]["parts"].append({"part_code": code, "part_name": row["part_name"], "qty": qty})
+        items[rid]["parts"].append({"part_code": code, "part_name": row["part_name"] or row["stock_part_name"], "qty": qty})
+        if items[rid]["status"] != "READY":
+            continue
         if code not in pick:
             pick[code] = {
                 "part_code": code, "part_name": row["part_name"] or row["stock_part_name"],
                 "qty": 0, "item_ids": [], "locations": [],
                 "stock_location": row["stock_location"] or "",
+                "stock_qty": int(row["stock_qty"] or 0),
                 "stock_updated_at": row["stock_updated_at"].isoformat() if row["stock_updated_at"] else None,
             }
         pick[code]["qty"] += qty
@@ -125,13 +129,18 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
     for row in locations:
         pick[row["part_code"]]["locations"].append({"location": row["location"], "qty": int(row["qty"])})
 
-    ready = [item for item in items.values() if item is not None]
+    ready = [item for item in items.values() if item is not None and item["status"] == "READY"]
+    pending = [item for item in items.values() if item is not None and item["status"] == "PENDING"]
+    active = ready + pending
+    pallet_locations = sorted({item["location"] for item in active if item["location"]})
     parts = sorted(pick.values(), key=lambda p: (p["locations"][0]["location"] if p["locations"] else p["stock_location"], p["part_code"]))
-    signature = hashlib.sha256(json.dumps({"ready": ready, "parts": parts}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+    signature = hashlib.sha256(json.dumps({"active": active, "parts": parts}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     return {
         "pallet_no": pallet_no,
         "counts": {status: counts[status] for status in ("READY", "PENDING", "COMPLETED")},
         "ready_items": ready,
+        "active_items": active,
+        "pallet_locations": pallet_locations,
         "pick_parts": parts,
         "signature": signature,
         "generated_at": datetime.now(timezone.utc).isoformat(),
