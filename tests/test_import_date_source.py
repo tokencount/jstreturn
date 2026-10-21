@@ -1,8 +1,9 @@
-"""New file imports default to Malaysia's upload date, with file DATE opt-in."""
+"""New file imports always use Malaysia's upload date."""
 import asyncio
+import inspect
 import io
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import datetime
 from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
@@ -36,7 +37,7 @@ class Pool:
         yield self.conn
 
 
-def run_import(source="import", file_date="2026-01-02"):
+def run_import(file_date="2026-01-02"):
     body = ("DATE,PALLET,次品仓位,商品名称,SKU,part_code,part_name,part_quantity\n"
             f"{file_date},A-1,H-1,产品,SKU-1,PART-1,螺丝,1\n")
     file = UploadFile(filename="items.csv", file=io.BytesIO(body.encode()))
@@ -44,7 +45,7 @@ def run_import(source="import", file_date="2026-01-02"):
     with patch.object(imports, "pool", return_value=Pool(conn)), patch.object(
         imports, "evaluate_status", new_callable=AsyncMock, return_value="PENDING"
     ):
-        result = asyncio.run(imports._upload_defectives_impl(file, {"id": 1}, source))
+        result = asyncio.run(imports._upload_defectives_impl(file, {"id": 1}))
     return result, conn
 
 
@@ -55,13 +56,11 @@ def test_default_upload_date_ignores_file_date():
     assert conn.insert_dates == [datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()]
 
 
-def test_explicit_file_date_is_preserved():
-    result, conn = run_import("file")
-    assert result["summary"]["date_source"] == "file"
-    assert conn.insert_dates == [date(2026, 1, 2)]
+def test_file_date_override_is_not_exposed():
+    assert "date_source" not in inspect.signature(imports.upload_defectives).parameters
 
 
 def test_default_upload_does_not_reject_bad_file_date():
-    result, conn = run_import("import", "not-a-date")
+    result, conn = run_import("not-a-date")
     assert result["summary"]["succeeded"] == 1
     assert len(conn.insert_dates) == 1

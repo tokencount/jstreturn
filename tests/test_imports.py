@@ -4,7 +4,7 @@ from datetime import date
 
 from openpyxl import Workbook
 
-from app.routers.imports import _group_tickets, _parse_business_date, _split_xlsx
+from app.routers.imports import _group_tickets, _split_xlsx
 
 
 class ImportGroupingTests(unittest.TestCase):
@@ -29,27 +29,6 @@ class ImportGroupingTests(unittest.TestCase):
             {**base, "_line": 3},
         ])
         self.assertEqual(len(groups), 2)
-
-
-class ImportDateTests(unittest.TestCase):
-    def test_common_excel_display_formats(self):
-        expected = date(2026, 8, 13)
-        for value in ("2026-08-13", "13/08/2026", "13-08-2026", "13.08.2026", "2026/08/13"):
-            with self.subTest(value=value):
-                self.assertEqual(_parse_business_date(value), expected)
-
-    def test_ambiguous_dates_are_day_first(self):
-        self.assertEqual(_parse_business_date("01/02/2026"), date(2026, 2, 1))
-
-    def test_excel_serial_date(self):
-        self.assertEqual(_parse_business_date("46247"), date(2026, 8, 13))
-
-    def test_iso_datetime(self):
-        self.assertEqual(_parse_business_date("2026-08-13 09:30:00"), date(2026, 8, 13))
-
-    def test_invalid_date_is_rejected(self):
-        with self.assertRaises(ValueError):
-            _parse_business_date("not-a-date")
 
 
 class ImportXlsxTests(unittest.TestCase):

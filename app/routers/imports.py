@@ -23,14 +23,13 @@ import logging
 import csv
 import io
 import json
-import re
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from collections import defaultdict
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from openpyxl import load_workbook
 
@@ -107,44 +106,6 @@ def _find_col(headers, *aliases):
     return None
 
 
-def _parse_business_date(value: str) -> date:
-    """Parse dates commonly produced by Excel and CSV exports.
-
-    Day-first is used for ambiguous numeric dates, matching the business
-    spreadsheets used in Malaysia. Excel serial dates are also accepted.
-    """
-    raw = (value or "").strip()
-    if not raw:
-        return date.today()
-
-    # Excel's 1900 date system, including its historical leap-year offset.
-    if re.fullmatch(r"\d+(?:\.0+)?", raw):
-        serial = int(float(raw))
-        if 1 <= serial <= 2958465:
-            parsed = date(1899, 12, 30) + timedelta(days=serial)
-            if date(1900, 1, 1) <= parsed <= date(9999, 12, 31):
-                return parsed
-
-    # ISO is unambiguous and remains the preferred format.
-    iso_candidate = raw.split("T", 1)[0].split(" ", 1)[0]
-    try:
-        return date.fromisoformat(iso_candidate)
-    except ValueError:
-        pass
-
-    for fmt in (
-        "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y",
-        "%d/%m/%y", "%d-%m-%y", "%d.%m.%y",
-        "%Y/%m/%d", "%Y.%m.%d",
-        "%d %b %Y", "%d %B %Y",
-    ):
-        try:
-            return datetime.strptime(raw, fmt).date()
-        except ValueError:
-            continue
-    raise ValueError(f"unrecognized date: {raw}")
-
-
 # Patterns for multi-part syntax in a single cell.
 #   "HS-X *1"                       -> (HS-X, 1)
 #   "HS-X *1 HS-Y *2"                -> [(HS-X, 1), (HS-Y, 2)]
@@ -213,13 +174,12 @@ def _group_tickets(rows):
 @router.post("/defectives")
 async def upload_defectives(
     file: UploadFile = File(...),
-    date_source: str = Form("import"),
     user: dict = Depends(require_role("returns", "admin")),
 ):
     # Top-level try/except: never let the server return HTML 500.
     # Always return structured JSON so the client can show the real error.
     try:
-        return await _upload_defectives_impl(file, user, date_source)
+        return await _upload_defectives_impl(file, user)
     except HTTPException:
         raise
     except Exception as e:
@@ -247,10 +207,7 @@ async def upload_defectives(
 async def _upload_defectives_impl(
     file: UploadFile,
     user: dict,
-    date_source: str = "import",
 ):
-    if date_source not in ("import", "file"):
-        raise HTTPException(422, "date_source must be import or file")
     import_day = datetime.now(ZoneInfo("Asia/Kuala_Lumpur")).date()
     filename = (file.filename or "").lower()
     if not filename.endswith((".csv", ".txt", ".xlsx")):
@@ -301,7 +258,6 @@ async def _upload_defectives_impl(
         if qty_idx is None:
             qty_idx = part_qty_idx
         location_idx = col("location", "次品仓位", "仓位", "warehouse", "loc", "位置")
-        date_idx = col("date", "business_date", "日期")
         part_idx = col("part_code", "part", "编码", "配件编码", "jst_code", "part code")
         part_name_idx = col("part_name", "配件名称", "name_part")
     else:
@@ -309,7 +265,6 @@ async def _upload_defectives_impl(
         pallet_idx, prod_idx, sku_idx, qty_idx = 1, 3, 4, 6
         part_idx, part_name_idx, part_qty_idx = 6, 5, 7
         location_idx = 2
-        date_idx = 0
 
     # Convert each data row to a structured dict.
     parsed = []
@@ -322,15 +277,9 @@ async def _upload_defectives_impl(
         if not pallet:
             continue
 
-        raw_date = at(date_idx)
-        if date_source == "import":
-            business_date = import_day
-        else:
-            try:
-                business_date = _parse_business_date(raw_date) if raw_date else import_day
-            except ValueError:
-                parse_failures.append({"line": line_no, "reason": f"unrecognized DATE: {raw_date}", "pallet": pallet})
-                continue
+        # File DATE is intentionally ignored: every new ticket uses the
+        # Malaysia-local date on which this upload began.
+        business_date = import_day
 
         # Resolve the part column cell (may contain multi-part syntax).
         # - Single form: "HS-XXX" with qty from part_quantity column.
@@ -446,7 +395,7 @@ async def _upload_defectives_impl(
                         """,
                         user["id"], di_id,
                         json.dumps({"source": "csv", "parts": len(t["parts"]),
-                                    "date_source": date_source, "business_date": business_date.isoformat()}),
+                                    "date_source": "import", "business_date": business_date.isoformat()}),
                     )
                 # Re-evaluate status outside the transaction (separate asyncpg acquisition).
                 status = await evaluate_status(di_id)
@@ -472,7 +421,7 @@ async def _upload_defectives_impl(
             "header_detected": has_header,
             "ready_count": ready_count,
             "pending_count": pending_count,
-            "date_source": date_source,
+            "date_source": "import",
             "import_date": import_day.isoformat(),
         },
         "successes": successes,
