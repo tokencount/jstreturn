@@ -474,6 +474,47 @@ class ReturnsBulkPermissionsTests(unittest.TestCase):
         self.assertEqual(details["actor_role"], "returns")
         self.assertEqual(details["location"], "H5-99-9")
 
+    def test_returns_can_bulk_set_date_on_ready_and_pending(self):
+        self._set_role("returns")
+        for status in ("READY", "PENDING"):
+            self._set_pre_flight(_mk_item(status))
+            r = self.client.post(
+                "/api/defectives/bulk",
+                json={"ids": [42], "action": "set_date", "business_date": "2026-10-21"},
+            )
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual(r.json()["succeeded"], 1)
+            details = _audit_details(self.conn, "bulk_set_date")
+            self.assertEqual(details["old_business_date"], "2026-08-14")
+            self.assertEqual(details["business_date"], "2026-10-21")
+            self.assertEqual(details["actor_role"], "returns")
+
+    def test_bulk_set_date_rejects_completed_and_invalid_date(self):
+        self._set_role("admin")
+        self._set_pre_flight(_mk_item("COMPLETED"))
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "set_date", "business_date": "2026-10-21"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["failed"], 1)
+        self.assertFalse(_audit_calls_with(self.conn, "bulk_set_date"))
+        self.conn.execute.reset_mock()
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "set_date", "business_date": "2026-02-30"},
+        )
+        self.assertEqual(r.status_code, 422, r.text)
+        self.assertFalse(self.conn.execute.await_args_list)
+
+    def test_repair_cannot_bulk_set_date(self):
+        self._set_role("repair")
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "set_date", "business_date": "2026-10-21"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+
     def test_returns_bulk_set_product_name(self):
         self._set_role("returns")
         self._set_pre_flight(_mk_item("PENDING"))

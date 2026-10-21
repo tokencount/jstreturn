@@ -448,6 +448,7 @@ async def bulk_action(
                                      or PENDING → COMPLETED (returns/admin)
         "set_sku"        { sku }     change sku            (returns + admin)
         "set_location"   { location } change 仓位           (returns + admin)
+        "set_date"       { business_date } change business date on READY/PENDING (returns + admin)
         "set_product_name" { product_name }                (returns + admin)
         "delete"                    remove                 (returns + admin)
       reason: str (optional) — recorded in audit_log
@@ -471,11 +472,23 @@ async def bulk_action(
     if action == "mark_complete":
         if role not in ("repair", "returns", "admin"):
             raise HTTPException(403, "mark_complete requires repair/returns/admin")
-    elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name"):
+    elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name", "set_date"):
         if role not in ("returns", "admin"):
             raise HTTPException(403, f"{action} requires returns/admin")
     else:
         raise HTTPException(400, f"unknown action {action!r}")
+
+    new_date = None
+    if action == "set_date":
+        raw_date = payload.get("business_date")
+        if not isinstance(raw_date, str):
+            raise HTTPException(422, "business_date must be YYYY-MM-DD")
+        try:
+            new_date = date.fromisoformat(raw_date)
+        except ValueError:
+            raise HTTPException(422, "invalid business_date")
+        if new_date.isoformat() != raw_date:
+            raise HTTPException(422, "business_date must be YYYY-MM-DD")
 
     pool_ = pool()
     successes = []
@@ -487,7 +500,7 @@ async def bulk_action(
             try:
                 async with conn.transaction():
                     row = await conn.fetchrow(
-                        "SELECT id, status, sku, product_name FROM defective_items WHERE id=$1",
+                        "SELECT id, status, sku, product_name, business_date FROM defective_items WHERE id=$1",
                         did,
                     )
                     if row is None:
@@ -554,6 +567,26 @@ async def bulk_action(
                             VALUES ($1, 'bulk_set_location', 'defective_item', $2, $3::jsonb)
                             """,
                             user["id"], did, json.dumps({"location": new_loc, "reason": reason, "actor_role": user["role"]}),
+                        )
+                    elif action == "set_date":
+                        if row["status"] not in ("READY", "PENDING"):
+                            failures.append({"id": did, "error": f"status is {row['status']}"})
+                            continue
+                        await conn.execute(
+                            "UPDATE defective_items SET business_date=$1, updated_at=NOW() WHERE id=$2",
+                            new_date, did,
+                        )
+                        old_date = row["business_date"]
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_set_date', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, json.dumps({
+                                "old_business_date": old_date.isoformat() if isinstance(old_date, date) else old_date,
+                                "business_date": new_date.isoformat(),
+                                "reason": reason, "actor_role": user["role"],
+                            }),
                         )
                     elif action == "set_product_name":
                         new_pn = (payload.get("product_name") or "").strip() or None
