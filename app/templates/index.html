@@ -1624,6 +1624,7 @@
             <option value="set_product_name">改 Product Name（returns/repair/admin）</option>
             <option value="set_location">改 仓位（returns/repair/admin）</option>
             <option x-show="tab==='ready' || tab==='pending'" value="set_date">批量改日期</option>
+            <option x-show="tab==='ready' || tab==='pending'" value="set_import_date">按导入日期生成（每条）</option>
             <option value="delete">删除（returns/repair/admin）</option>
           </select>
           <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
@@ -2087,6 +2088,7 @@
         <h2 style="font-size:1.1rem; margin:0 0 .35rem;">批量导入退件单</h2>
         <p style="font-size:.85rem; color:var(--fg-3); margin:0 0 .85rem;">
           CSV 或 XLSX 文件，一行 = 一个 part，同 pallet 多行 = 同张单多 part。<br>
+          默认以导入当天（马来西亚时间）生成业务日期；需要时可改用文件 DATE。<br>
           <a href="/api/imports/template" @click.prevent="downloadTemplate()" style="color:var(--brand);">下载模板</a>
         </p>
 
@@ -2095,6 +2097,12 @@
         </div>
 
         <div x-show="user && ['returns','admin'].includes(user.role)">
+          <label class="row gap-sm" style="margin-bottom:.75rem; flex-wrap:wrap;">日期来源
+            <select x-model="importDateSource" style="width:auto; min-width:12rem;">
+              <option value="import">导入当天（默认）</option>
+              <option value="file">文件 DATE 列</option>
+            </select>
+          </label>
           <!-- Drag/drop zone -->
           <div class="drop-zone"
                :class="{ 'dragging': dragOver }"
@@ -2126,7 +2134,7 @@
                 <dt>列数</dt><dd x-text="importPreview ? importPreview.columns : 0"></dd>
                 <dt>检测表头</dt><dd x-text="importPreview && importPreview.header_detected ? '是' : '否'"></dd>
                 <template x-if="importPreview && importPreview.date_sample">
-                  <div style="display:contents;"><dt>日期样本</dt><dd x-text="importPreview ? importPreview.date_sample : ''"></dd></div>
+                  <div style="display:contents;"><dt>文件日期样本</dt><dd x-text="importPreview ? importPreview.date_sample : ''"></dd></div>
                 </template>
                 <dt>预估票数</dt><dd><b x-text="importPreview ? importPreview.estimated_tickets : 0"></b></dd>
               </dl>
@@ -3037,6 +3045,7 @@ function app() {
     userCreateOk: false,
     tokenInfo: null,
     importResult: null,
+    importDateSource: 'import',
     importingFile: false,
 
     /* P2 mobile UI state */
@@ -3669,6 +3678,7 @@ function app() {
       this.importErrorReport = null;
       const fd = new FormData();
       fd.append('file', this.pendingFile);
+      fd.append('date_source', this.importDateSource);
       try {
         const r = await fetch('/api/imports/defectives', { method: 'POST', body: fd, credentials: 'include' });
         const text = await r.text();
@@ -4147,7 +4157,9 @@ function app() {
       }
       const overrideNote = this.bulkAction === 'mark_complete' && this.tab === 'pending'
         ? '\n所选 PENDING 将手动转为 COMPLETED。' : '';
-      const actionLabel = this.bulkAction === 'set_date' ? `把业务日期改为 ${this.bulkArg.business_date}` : `执行 “${this.bulkAction}”`;
+      const actionLabel = this.bulkAction === 'set_date' ? `把业务日期改为 ${this.bulkArg.business_date}`
+        : this.bulkAction === 'set_import_date' ? '按各自导入日期（马来西亚时间）生成业务日期'
+        : `执行 “${this.bulkAction}”`;
       if (!confirm(`确认对 ${this.selectedIds.size} 项${actionLabel}？${overrideNote}`)) return;
       this.bulkBusy = true;
       this.bulkResult = '';
@@ -4195,6 +4207,7 @@ function app() {
       }
       const fd = new FormData();
       fd.append('file', f);
+      fd.append('date_source', this.importDateSource);
       try {
         const r = await fetch('/api/inventory/upload', { method: 'POST', body: fd, credentials: 'include' });
         const text = await r.text();

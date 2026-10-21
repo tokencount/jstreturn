@@ -28,6 +28,7 @@ correctly under each role.
 """
 import json
 import unittest
+from datetime import date, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -514,6 +515,47 @@ class ReturnsBulkPermissionsTests(unittest.TestCase):
             json={"ids": [42], "action": "set_date", "business_date": "2026-10-21"},
         )
         self.assertEqual(r.status_code, 403, r.text)
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "set_import_date"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+
+    def test_bulk_import_date_uses_each_rows_malaysia_calendar_day(self):
+        self._set_role("returns")
+        timestamps = {
+            42: datetime(2026, 10, 20, 15, 59, tzinfo=timezone.utc),
+            43: datetime(2026, 10, 20, 16, 1, tzinfo=timezone.utc),
+        }
+        async def row_for_id(_query, did):
+            row = _mk_item("READY" if did == 42 else "PENDING")
+            row["id"] = did
+            row["created_at"] = timestamps[did]
+            return row
+        self.conn.fetchrow = AsyncMock(side_effect=row_for_id)
+        r = self.client.post(
+            "/api/defectives/bulk", json={"ids": [42, 43], "action": "set_import_date"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["succeeded"], 2)
+        updates = [call.args for call in self.conn.execute.call_args_list
+                   if "SET business_date=$1" in call.args[0]]
+        self.assertEqual([(args[1], args[2]) for args in updates], [
+            (date(2026, 10, 20), 42), (date(2026, 10, 21), 43),
+        ])
+        audit = [json.loads(args[3]) for args in _audit_calls_with(self.conn, "bulk_set_date")]
+        self.assertEqual([d["date_source"] for d in audit], ["created_at", "created_at"])
+
+    def test_bulk_import_date_rejects_missing_timestamp(self):
+        self._set_role("admin")
+        self._set_pre_flight(_mk_item("READY"))
+        r = self.client.post(
+            "/api/defectives/bulk", json={"ids": [42], "action": "set_import_date"},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["failed"], 1)
+        self.assertFalse(_audit_calls_with(self.conn, "bulk_set_date"))
+
 
     def test_returns_bulk_set_product_name(self):
         self._set_role("returns")

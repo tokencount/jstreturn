@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -449,6 +450,7 @@ async def bulk_action(
         "set_sku"        { sku }     change sku            (returns + admin)
         "set_location"   { location } change 仓位           (returns + admin)
         "set_date"       { business_date } change business date on READY/PENDING (returns + admin)
+        "set_import_date"           derive each READY/PENDING date from created_at in Malaysia
         "set_product_name" { product_name }                (returns + admin)
         "delete"                    remove                 (returns + admin)
       reason: str (optional) — recorded in audit_log
@@ -472,7 +474,7 @@ async def bulk_action(
     if action == "mark_complete":
         if role not in ("repair", "returns", "admin"):
             raise HTTPException(403, "mark_complete requires repair/returns/admin")
-    elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name", "set_date"):
+    elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name", "set_date", "set_import_date"):
         if role not in ("returns", "admin"):
             raise HTTPException(403, f"{action} requires returns/admin")
     else:
@@ -500,7 +502,7 @@ async def bulk_action(
             try:
                 async with conn.transaction():
                     row = await conn.fetchrow(
-                        "SELECT id, status, sku, product_name, business_date FROM defective_items WHERE id=$1",
+                        "SELECT id, status, sku, product_name, business_date, created_at FROM defective_items WHERE id=$1",
                         did,
                     )
                     if row is None:
@@ -568,13 +570,20 @@ async def bulk_action(
                             """,
                             user["id"], did, json.dumps({"location": new_loc, "reason": reason, "actor_role": user["role"]}),
                         )
-                    elif action == "set_date":
+                    elif action in ("set_date", "set_import_date"):
                         if row["status"] not in ("READY", "PENDING"):
                             failures.append({"id": did, "error": f"status is {row['status']}"})
                             continue
+                        target_date = new_date
+                        if action == "set_import_date":
+                            created_at = row["created_at"]
+                            if not isinstance(created_at, datetime) or created_at.tzinfo is None:
+                                failures.append({"id": did, "error": "import timestamp missing"})
+                                continue
+                            target_date = created_at.astimezone(ZoneInfo("Asia/Kuala_Lumpur")).date()
                         await conn.execute(
                             "UPDATE defective_items SET business_date=$1, updated_at=NOW() WHERE id=$2",
-                            new_date, did,
+                            target_date, did,
                         )
                         old_date = row["business_date"]
                         await conn.execute(
@@ -584,7 +593,8 @@ async def bulk_action(
                             """,
                             user["id"], did, json.dumps({
                                 "old_business_date": old_date.isoformat() if isinstance(old_date, date) else old_date,
-                                "business_date": new_date.isoformat(),
+                                "business_date": target_date.isoformat(),
+                                "date_source": "created_at" if action == "set_import_date" else "manual",
                                 "reason": reason, "actor_role": user["role"],
                             }),
                         )
