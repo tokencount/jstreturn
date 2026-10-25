@@ -475,6 +475,52 @@ class ReturnsBulkPermissionsTests(unittest.TestCase):
         self.assertEqual(details["actor_role"], "returns")
         self.assertEqual(details["location"], "H5-99-9")
 
+    def test_bulk_set_pallet_updates_selected_active_items_with_audit(self):
+        self._set_role("returns")
+        async def row_for_id(_query, did):
+            row = _mk_item("READY" if did == 42 else "PENDING")
+            row["id"] = did
+            row["pallet_no"] = f"OLD-{did}"
+            return row
+        self.conn.fetchrow = AsyncMock(side_effect=row_for_id)
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42, 43], "action": "set_pallet", "pallet_no": "  NEW-88  "},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["succeeded"], 2)
+        updates = [c for c in self.conn.execute.await_args_list if "UPDATE defective_items SET pallet_no" in c.args[0]]
+        self.assertEqual([c.args[1:] for c in updates], [("NEW-88", 42), ("NEW-88", 43)])
+        audits = [json.loads(args[3]) for args in _audit_calls_with(self.conn, "bulk_set_pallet")]
+        self.assertEqual([a["old_pallet_no"] for a in audits], ["OLD-42", "OLD-43"])
+        self.assertTrue(all(a["pallet_no"] == "NEW-88" and a["actor_role"] == "returns" for a in audits))
+
+    def test_bulk_set_pallet_rejects_completed_and_invalid_value(self):
+        self._set_role("admin")
+        self._set_pre_flight(_mk_item("COMPLETED"))
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "set_pallet", "pallet_no": "NEW-88"},
+        )
+        self.assertEqual(r.json()["failed"], 1)
+        self.assertFalse(_audit_calls_with(self.conn, "bulk_set_pallet"))
+        self.conn.execute.reset_mock()
+        for invalid in ("  ", "X" * 81):
+            r = self.client.post(
+                "/api/defectives/bulk",
+                json={"ids": [42], "action": "set_pallet", "pallet_no": invalid},
+            )
+            self.assertEqual(r.status_code, 422, r.text)
+        self.assertFalse(self.conn.execute.await_args_list)
+
+    def test_repair_cannot_bulk_set_pallet(self):
+        self._set_role("repair")
+        r = self.client.post(
+            "/api/defectives/bulk",
+            json={"ids": [42], "action": "set_pallet", "pallet_no": "NEW-88"},
+        )
+        self.assertEqual(r.status_code, 403, r.text)
+
     def test_returns_can_bulk_set_date_on_ready_and_pending(self):
         self._set_role("returns")
         for status in ("READY", "PENDING"):

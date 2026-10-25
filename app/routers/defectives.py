@@ -449,6 +449,7 @@ async def bulk_action(
                                      or PENDING → COMPLETED (returns/admin)
         "set_sku"        { sku }     change sku            (returns + admin)
         "set_location"   { location } change 仓位           (returns + admin)
+        "set_pallet"     { pallet_no } change pallet on READY/PENDING (returns + admin)
         "set_date"       { business_date } change business date on READY/PENDING (returns + admin)
         "set_import_date"           derive each READY/PENDING date from created_at in Malaysia
         "set_product_name" { product_name }                (returns + admin)
@@ -474,13 +475,19 @@ async def bulk_action(
     if action == "mark_complete":
         if role not in ("repair", "returns", "admin"):
             raise HTTPException(403, "mark_complete requires repair/returns/admin")
-    elif action in ("recompute", "delete", "set_sku", "set_location", "set_product_name", "set_date", "set_import_date"):
+    elif action in ("recompute", "delete", "set_sku", "set_location", "set_pallet", "set_product_name", "set_date", "set_import_date"):
         if role not in ("returns", "admin"):
             raise HTTPException(403, f"{action} requires returns/admin")
     else:
         raise HTTPException(400, f"unknown action {action!r}")
 
     new_date = None
+    new_pallet = None
+    if action == "set_pallet":
+        raw_pallet = payload.get("pallet_no")
+        if not isinstance(raw_pallet, str) or not 1 <= len(raw_pallet.strip()) <= 80:
+            raise HTTPException(422, "pallet_no must be 1-80 characters")
+        new_pallet = raw_pallet.strip()
     if action == "set_date":
         raw_date = payload.get("business_date")
         if not isinstance(raw_date, str):
@@ -502,7 +509,7 @@ async def bulk_action(
             try:
                 async with conn.transaction():
                     row = await conn.fetchrow(
-                        "SELECT id, status, sku, product_name, business_date, created_at FROM defective_items WHERE id=$1",
+                        "SELECT id, status, sku, product_name, pallet_no, business_date, created_at FROM defective_items WHERE id=$1",
                         did,
                     )
                     if row is None:
@@ -569,6 +576,24 @@ async def bulk_action(
                             VALUES ($1, 'bulk_set_location', 'defective_item', $2, $3::jsonb)
                             """,
                             user["id"], did, json.dumps({"location": new_loc, "reason": reason, "actor_role": user["role"]}),
+                        )
+                    elif action == "set_pallet":
+                        if row["status"] not in ("READY", "PENDING"):
+                            failures.append({"id": did, "error": f"status is {row['status']}"})
+                            continue
+                        await conn.execute(
+                            "UPDATE defective_items SET pallet_no=$1, updated_at=NOW() WHERE id=$2",
+                            new_pallet, did,
+                        )
+                        await conn.execute(
+                            """
+                            INSERT INTO audit_log (user_id, action, entity_type, entity_id, details)
+                            VALUES ($1, 'bulk_set_pallet', 'defective_item', $2, $3::jsonb)
+                            """,
+                            user["id"], did, json.dumps({
+                                "old_pallet_no": row["pallet_no"], "pallet_no": new_pallet,
+                                "reason": reason, "actor_role": user["role"],
+                            }),
                         )
                     elif action in ("set_date", "set_import_date"):
                         if row["status"] not in ("READY", "PENDING"):

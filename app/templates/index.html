@@ -1623,6 +1623,7 @@
             <option value="set_sku">改 SKU（returns/repair/admin）</option>
             <option value="set_product_name">改 Product Name（returns/repair/admin）</option>
             <option value="set_location">改 仓位（returns/repair/admin）</option>
+            <option x-show="tab==='ready' || tab==='pending'" value="set_pallet">批量修改 Pallet</option>
             <option x-show="tab==='ready' || tab==='pending'" value="set_date">批量改日期</option>
             <option x-show="tab==='ready' || tab==='pending'" value="set_import_date">按导入日期生成（每条）</option>
             <option value="delete">删除（returns/repair/admin）</option>
@@ -1630,6 +1631,7 @@
           <input x-show="bulkAction === 'set_sku'" x-model="bulkArg.sku" placeholder="新 SKU" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <input x-show="bulkAction === 'set_product_name'" x-model="bulkArg.product_name" placeholder="新 product_name" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <input x-show="bulkAction === 'set_location'" x-model="bulkArg.location" placeholder="新 仓位 / location" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
+          <input x-show="bulkAction === 'set_pallet'" x-model="bulkArg.pallet_no" placeholder="新 Pallet 编号" maxlength="80" aria-label="新 Pallet 编号" style="padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <input x-show="bulkAction === 'set_date'" x-model="bulkArg.business_date" type="date" aria-label="新业务日期" style="width:auto; padding:.35rem .6rem; border:1px solid #c7d2fe; border-radius:.35rem;" />
           <button class="btn btn-primary" @click="runBulkAction()" :disabled="!bulkAction || bulkBusy" x-text="bulkBusy ? '执行中…' : '执行'"></button>
           <button class="btn" @click="clearSelection()">清除选择</button>
@@ -3043,7 +3045,7 @@ function app() {
     mobileFiltersOpen: false,
     selectedIds: new Set(),
     bulkAction: '',
-    bulkArg: { sku: '', product_name: '', location: '', business_date: '' },
+    bulkArg: { sku: '', product_name: '', location: '', pallet_no: '', business_date: '' },
     bulkBusy: false,
     bulkResult: '',
 
@@ -4130,9 +4132,14 @@ function app() {
         this.bulkResult = '请先选择新日期';
         return;
       }
+      if (this.bulkAction === 'set_pallet' && !this.bulkArg.pallet_no.trim()) {
+        this.bulkResult = '请先填写新 Pallet 编号';
+        return;
+      }
       const overrideNote = this.bulkAction === 'mark_complete' && this.tab === 'pending'
         ? '\n所选 PENDING 将手动转为 COMPLETED。' : '';
       const actionLabel = this.bulkAction === 'set_date' ? `把业务日期改为 ${this.bulkArg.business_date}`
+        : this.bulkAction === 'set_pallet' ? `的 Pallet 改为 ${this.bulkArg.pallet_no.trim()}`
         : this.bulkAction === 'set_import_date' ? '按各自导入日期（马来西亚时间）生成业务日期'
         : `执行 “${this.bulkAction}”`;
       if (!confirm(`确认对 ${this.selectedIds.size} 项${actionLabel}？${overrideNote}`)) return;
@@ -4145,6 +4152,7 @@ function app() {
       if (this.bulkAction === 'set_sku') payload.sku = this.bulkArg.sku || '';
       if (this.bulkAction === 'set_product_name') payload.product_name = this.bulkArg.product_name || '';
       if (this.bulkAction === 'set_location') payload.location = this.bulkArg.location || '';
+      if (this.bulkAction === 'set_pallet') payload.pallet_no = this.bulkArg.pallet_no.trim();
       if (this.bulkAction === 'set_date') payload.business_date = this.bulkArg.business_date;
       try {
         const r = await this.api('/api/defectives/bulk', { method: 'POST', body: JSON.stringify(payload) });
