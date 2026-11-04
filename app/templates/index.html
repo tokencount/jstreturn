@@ -1292,6 +1292,11 @@
       #pallet-pick th, #pallet-pick td { padding: 4pt; border-bottom: 1px solid #bbb; }
       #pallet-pick tr { break-inside: avoid; }
     }
+    .purchase-date-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: end; }
+    .purchase-date-range input { min-width: 0; max-width: 100%; }
+    .purchase-date-actions { display: flex; flex-wrap: wrap; gap: .5rem; grid-column: 1 / -1; }
+    .purchase-date-hint { grid-column: 1 / -1; margin: 0; color: var(--fg-3); font-size: .8rem; }
+    @media (max-width: 600px) { .purchase-date-range { grid-template-columns: minmax(0, 1fr); } }
   </style>
 </head>
 <body>
@@ -2289,25 +2294,27 @@
           <div>
             <h2>采购配件导出</h2>
             <p>
-              拉取选定业务日期的 <b>PENDING</b> 退件单里 <b>需要采购的 part</b> 数量。
-              按 part_code 前缀分到 HS（HS168-自营） / HE（HE168-自营仓） / HU（HU168-自营仓）三张 sheet。
+              按业务日期范围汇总（含开始和结束当天），留空不限日期。导出 <b>PENDING</b> 退件单里 <b>需要采购的 part</b> 数量。
+              按 part_code 前缀分到 HS（HS168-自营） / HE（HE168-自营仓） / HU（HU168-自营仓）三个 Excel 文件。
               其他前缀不导出，会在右下方 “跳过提示” 里列出。
             </p>
           </div>
         </div>
 
-        <div class="panel" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:1rem; align-items:end;">
+        <div class="panel purchase-date-range">
           <div>
-            <label>业务日期（Asia/Kuala_Lumpur）</label>
-            <input type="date" x-model="purchaseDate" />
+            <label for="purchase-start-date">开始业务日期</label>
+            <input id="purchase-start-date" type="date" x-model="purchaseStartDate" :max="purchaseEndDate || null" />
           </div>
           <div>
-            <label>&nbsp;</label>
-            <button class="btn btn-primary" @click="exportPurchase()" :disabled="purchaseBusy" x-text="purchaseBusy ? '生成中…' : '下载 xlsx'"></button>
+            <label for="purchase-end-date">结束业务日期</label>
+            <input id="purchase-end-date" type="date" x-model="purchaseEndDate" :min="purchaseStartDate || null" />
           </div>
-          <div>
-            <label>&nbsp;</label>
+          <div class="purchase-date-actions">
+            <button class="btn" @click="purchaseStartDate=''; purchaseEndDate=''" :disabled="purchaseBusy">清空日期</button>
+            <button class="btn btn-primary" @click="exportPurchase()" :disabled="purchaseBusy" x-text="purchaseBusy ? '生成中…' : '下载 Excel（ZIP）'"></button>
           </div>
+          <p class="purchase-date-hint">按退件单业务日期筛选（马来西亚时间），不是创建时间；可只填开始或结束日期，两项留空导出全部。</p>
         </div>
 
         <div x-show="purchaseResult" class="alert" :class="purchaseOk ? 'alert-ok' : 'alert-bad'" x-text="purchaseResult"></div>
@@ -2316,7 +2323,7 @@
           <div style="display:flex; align-items:center; justify-content:space-between; gap:.75rem; flex-wrap:wrap;">
             <div>
               <div style="font-weight:600;">
-                上次导出 <span x-text="(purchaseSummary && purchaseSummary.business_date) || ''"></span>
+                上次导出 <span x-text="(purchaseSummary && purchaseSummary.date_range) || (purchaseSummary && purchaseSummary.business_date) || ''"></span>
                 · <span x-text="(purchaseSummary && purchaseSummary.row_count) || 0"></span> 行
               </div>
               <div style="font-size:.8rem; color:var(--fg-3); margin-top:.15rem;">
@@ -3312,8 +3319,7 @@ function app() {
       else if (name === 'pending') this.loadList('PENDING');
       else if (name === 'history') this.loadList('COMPLETED');
       else if (name === 'purchase') {
-        // default the date picker to today in Asia/Kuala_Lumpur
-        if (!this.purchaseDate) this.purchaseDate = this.kltToday();
+        // Empty bounds intentionally mean all business dates.
       }
       else if (name === 'spx') {
         this.spxView = this.user && ['admin','returns'].includes(this.user.role) ? 'upload' : 'lookup';
@@ -3324,7 +3330,8 @@ function app() {
     /* ========================================================
        Purchase export (PENDING parts → HS/HE/HU ZIP)
        ======================================================== */
-    purchaseDate: '',
+    purchaseStartDate: '',
+    purchaseEndDate: '',
     purchaseBusy: false,
     purchaseResult: '',
     purchaseOk: false,
@@ -3354,11 +3361,22 @@ function app() {
       }
     },
 
+    purchaseQuery() {
+      if (this.purchaseStartDate && this.purchaseEndDate && this.purchaseStartDate > this.purchaseEndDate) {
+        throw new Error('开始日期不能晚于结束日期');
+      }
+      const params = new URLSearchParams();
+      if (this.purchaseStartDate) params.set('start_date', this.purchaseStartDate);
+      if (this.purchaseEndDate) params.set('end_date', this.purchaseEndDate);
+      return params;
+    },
+
     async fetchPurchaseSummary() {
       // JSON-only peek so the UI can show skipped-part hints without downloading.
-      if (!this.purchaseDate) this.purchaseDate = this.kltToday();
       try {
-        const r = await fetch('/api/exports/purchase?business_date=' + encodeURIComponent(this.purchaseDate) + '&summary_only=true', { credentials: 'include' });
+        const params = this.purchaseQuery();
+        params.set('summary_only', 'true');
+        const r = await fetch('/api/exports/purchase?' + params, { credentials: 'include' });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         this.purchaseSummary = await r.json();
         this.purchaseOk = true;
@@ -3493,15 +3511,14 @@ function app() {
 
     async exportPurchase() {
       if (this.purchaseBusy) return;
-      if (!this.purchaseDate) this.purchaseDate = this.kltToday();
       this.purchaseBusy = true;
       this.purchaseResult = '';
       this.purchaseSummary = null;
       try {
-        const r = await fetch('/api/exports/purchase?business_date=' + encodeURIComponent(this.purchaseDate), { credentials: 'include' });
+        const r = await fetch('/api/exports/purchase?' + this.purchaseQuery(), { credentials: 'include' });
         if (!r.ok) {
-          const t = await r.text();
-          throw new Error(t || ('HTTP ' + r.status));
+          const error = await r.json().catch(() => ({}));
+          throw new Error(error.detail || ('HTTP ' + r.status));
         }
         // Try to read X-Export-Summary header before consuming the body
         const summaryHdr = r.headers.get('X-Export-Summary');
@@ -3518,7 +3535,7 @@ function app() {
         const a = document.createElement('a');
         a.href = url;
         // extract filename from Content-Disposition (UTF-8 encoded or plain)
-        let fname = '采购配件-' + this.purchaseDate + '.zip';
+        let fname = '采购配件.zip';
         const m = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';]+)/i);
         if (m && m[1]) {
           try { fname = decodeURIComponent(m[1]); } catch (_) { fname = m[1]; }
@@ -3529,7 +3546,7 @@ function app() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        let msg = '✓ 已下载 ' + fname + ' · ' + rowCount + ' 行';
+        let msg = rowCount === 0 ? '✓ 所选业务日期范围内无采购需求，已下载说明文件（ZIP）' : '✓ 已下载 ' + fname + ' · ' + rowCount + ' 行';
         if (warehouses) msg += '（含 ' + warehouses + '）';
         if (skipCount > 0) msg += '· 跳过 ' + skipCount + ' 个 part（前缀：' + (skipped || '—') + '）';
         this.purchaseResult = msg;

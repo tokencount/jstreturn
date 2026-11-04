@@ -83,7 +83,7 @@ def _build_app(role="returns"):
 def _seed_db(conn, defective_items, inventory_map):
     item_rows = []
     for it in defective_items:
-        item_rows.append({**it, "parts": json.dumps(it["parts"])})
+        item_rows.append({"business_date": date(2026, 8, 14), **it, "parts": json.dumps(it["parts"])})
     inv_rows = [
         {"part_code": code, "on_hand_qty": qty}
         for code, qty in inventory_map.items()
@@ -388,7 +388,7 @@ class PurchaseExportZipTests(unittest.TestCase):
         inv = {"HE-D1": 0}
         self.app, self.user = _build_app("returns")
         self.conn = _FakeConn()
-        rows = [{**items[0], "parts": json.dumps(items[0]["parts"])}]
+        rows = [{"business_date": target, **items[0], "parts": json.dumps(items[0]["parts"])}]
         inv_rows = [{"part_code": "HE-D1", "on_hand_qty": 0}]
         self.conn.fetch = AsyncMock(side_effect=[rows, inv_rows])
         self._pool_patch = patch.object(db_mod, "pool", lambda: make_pool_with(self.conn))

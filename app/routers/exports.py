@@ -18,6 +18,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import zipfile
 from collections import defaultdict
 from datetime import date as _date, datetime, timezone
@@ -30,12 +31,12 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from openpyxl import Workbook, load_workbook
 
 from app.auth import current_user
-from app.matcher import compute_reservation_plan
+from app.matcher import compute_reservation_plan, ELIGIBLE_INVENTORY_SQL
 
 log = logging.getLogger("jstreturn")
 
-# Asia/Kuala_Lumpur is the project's business-day reference. All
-# callers default to "today in that TZ" if no business_date is supplied.
+# Asia/Kuala_Lumpur is the project's business-day reference. Unbounded
+# exports include all business dates; today is only a legacy summary stamp.
 BUSINESS_TZ = ZoneInfo("Asia/Kuala_Lumpur")
 
 # The three warehouses supported in the customer contract.
@@ -103,12 +104,16 @@ def _part_prefix(part_code: str) -> str:
 def compute_purchase_rows(
     pending_items: Iterable[Mapping],
     inventory_map: Mapping[str, int],
+    start_date: Optional[_date] = None,
+    end_date: Optional[_date] = None,
 ) -> dict:
     """Aggregate part-purchase demand for PENDING items.
 
     Args:
-        pending_items: Iterable of items with `.id` and `.parts`. Each part
-            is a mapping with `part_code` and `qty`.
+        pending_items: All PENDING and READY items, across every business date,
+            with `.id` and `.parts`. Each part has `part_code` and `qty`.
+        start_date, end_date: Inclusive filters applied only after allocation;
+            missing bounds are unlimited.
         inventory_map: part_code → on_hand_qty.
 
     Returns:
@@ -142,7 +147,18 @@ def compute_purchase_rows(
         # the matcher; READY items are fully covered and their demand
         # is met by the existing reservation, so they do not contribute
         # to purchase demand.
-        if int(raw["id"]) in ready_ids:
+        if int(raw["id"]) in ready_ids or raw.get("status", "PENDING") != "PENDING":
+            continue
+        # Filtering must happen AFTER the global plan: READY reservations on
+        # other business dates still consume stock. Never use created_at here.
+        business_day = raw.get("business_date")
+        if isinstance(business_day, str):
+            business_day = _date.fromisoformat(business_day)
+        if (start_date or end_date) and business_day is None:
+            continue
+        if start_date and business_day < start_date:
+            continue
+        if end_date and business_day > end_date:
             continue
         for p in raw.get("parts") or []:
             code = (p.get("part_code") or "").strip()
@@ -262,6 +278,7 @@ def build_purchase_zip(
     agg: dict,
     business_date: _date,
     template_path: Optional[Path] = None,
+    date_label: Optional[str] = None,
 ) -> bytes:
     """Build the ZIP archive that bundles per-warehouse xlsx files.
 
@@ -275,6 +292,7 @@ def build_purchase_zip(
     We build each xlsx against a freshly-loaded copy of the template
     workbook so a single template is not mutated across prefixes.
     """
+    date_label = date_label or business_date.isoformat()
     template_path = template_path or _resolve_template_path()
     if not template_path.exists():
         raise HTTPException(500, f"purchase export template missing at {template_path}")
@@ -286,11 +304,11 @@ def build_purchase_zip(
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         if not has_any:
             placeholder = (
-                f"{business_date.isoformat()} 无采购需求。\n"
+                f"{date_label} 无采购需求。\n"
                 f"被跳过的 part 数: {len(agg.get('skipped_part_codes') or [])}\n"
                 f"被跳过的前缀: {', '.join(agg.get('skipped_prefixes') or []) or '—'}\n"
             )
-            zf.writestr(f"empty-{business_date.isoformat()}.txt", placeholder)
+            zf.writestr(f"empty-{date_label}.txt", placeholder)
         else:
             for prefix in ("HS", "HE", "HU"):
                 rows = by_warehouse.get(prefix) or []
@@ -305,7 +323,7 @@ def build_purchase_zip(
                     business_date=business_date,
                     template_wb=wb,
                 )
-                filename = f"{prefix}-采购配件-{business_date.isoformat()}.xlsx"
+                filename = f"{prefix}-采购配件-{date_label}.xlsx"
                 zf.writestr(filename, xlsx_bytes)
     return buf.getvalue()
 
@@ -321,9 +339,44 @@ def parse_business_date(value: Optional[str]) -> _date:
     if not value:
         raise HTTPException(400, "business_date required (YYYY-MM-DD)")
     try:
+        if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+            raise ValueError
         return _date.fromisoformat(value)
     except ValueError:
         raise HTTPException(400, "business_date must be YYYY-MM-DD")
+
+
+def parse_purchase_range(
+    business_date: Optional[str], start_date: Optional[str], end_date: Optional[str]
+) -> tuple[Optional[_date], Optional[_date]]:
+    """Inclusive business dates; legacy business_date remains a single-day alias."""
+    if business_date and (start_date or end_date):
+        raise HTTPException(400, "业务日期与日期范围不能同时填写")
+    if business_date:
+        day = parse_business_date(business_date)
+        return day, day
+    def parse_bound(value, label):
+        if not value:
+            return None
+        try:
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+                raise ValueError
+            return _date.fromisoformat(value)
+        except ValueError:
+            raise HTTPException(400, f"{label}格式应为 YYYY-MM-DD")
+    start = parse_bound(start_date, "开始日期")
+    end = parse_bound(end_date, "结束日期")
+    if start and end and start > end:
+        raise HTTPException(400, "开始日期不能晚于结束日期")
+    return start, end
+
+
+def purchase_range_label(start: Optional[_date], end: Optional[_date]) -> str:
+    if start and start == end:
+        return start.isoformat()
+    if not start and not end:
+        return "all"
+    return f"{start.isoformat() if start else 'all'}_to_{end.isoformat() if end else 'all'}"
 
 
 def build_summary(agg: dict, business_date: _date) -> dict:
@@ -350,15 +403,17 @@ def build_summary(agg: dict, business_date: _date) -> dict:
 async def export_purchase(
     business_date: Optional[str] = Query(
         None,
-        description="业务日期 YYYY-MM-DD，Asia/Kuala_Lumpur。省略则取当天的 KLT 日期。",
+        description="兼容单日业务日期 YYYY-MM-DD；不与日期范围同时使用。",
     ),
     summary_only: bool = Query(
         False,
         description="true 时只返回 JSON 汇总（不下载 ZIP）；UI 显示跳过提示用。",
     ),
+    start_date: Optional[str] = Query(None, description="开始业务日期（含），YYYY-MM-DD；留空不限"),
+    end_date: Optional[str] = Query(None, description="结束业务日期（含），YYYY-MM-DD；留空不限"),
     user: dict = Depends(current_user),
 ):
-    """Roll up PENDING parts for `business_date` into a ZIP of xlsx files.
+    """Roll up PENDING parts in an inclusive business-date range (blank = all).
 
     Response shape:
 
@@ -370,19 +425,21 @@ async def export_purchase(
     The ZIP entry names are ``HS-采购配件-YYYY-MM-DD.xlsx`` etc.; the
     ZIP itself is named ``采购配件-YYYY-MM-DD.zip``.
     """
-    target_date = parse_business_date(business_date) if business_date else today_in_business_tz()
-    return await _export_purchase_for_date(target_date, user, summary_only=summary_only)
+    start, end = parse_purchase_range(business_date, start_date, end_date)
+    return await _export_purchase_for_date(start, user, summary_only=summary_only, end_date=end)
 
 
 @router.get("/purchase/preview")
 async def preview_purchase(
     business_date: Optional[str] = Query(
         None,
-        description="业务日期 YYYY-MM-DD，Asia/Kuala_Lumpur。省略则取当天的 KLT 日期。",
+        description="兼容单日业务日期 YYYY-MM-DD；不与日期范围同时使用。",
     ),
+    start_date: Optional[str] = Query(None, description="开始业务日期（含），YYYY-MM-DD；留空不限"),
+    end_date: Optional[str] = Query(None, description="结束业务日期（含），YYYY-MM-DD；留空不限"),
     user: dict = Depends(current_user),
 ):
-    """JSON-only preview of the purchase export for `business_date`.
+    """JSON-only preview using the same inclusive business-date range.
 
     Always returns JSON shape (never a ZIP). The frontend uses this to
     display the "被跳过的 part_code / 前缀 / 仓库名" hint pane before the
@@ -392,8 +449,8 @@ async def preview_purchase(
     was not assigned to a warehouse plus its prefix and the warehouse
     name it would have mapped to (empty string when no matching prefix).
     """
-    target_date = parse_business_date(business_date) if business_date else today_in_business_tz()
-    summary = await _export_purchase_for_date(target_date, user, summary_only=True)
+    start, end = parse_purchase_range(business_date, start_date, end_date)
+    summary = await _export_purchase_for_date(start, user, summary_only=True, end_date=end)
     if isinstance(summary, JSONResponse):
         body = summary.body
         if isinstance(body, (bytes, bytearray)):
@@ -423,7 +480,7 @@ async def preview_purchase(
     return JSONResponse(data)
 
 
-async def _export_purchase_for_date(target_date: _date, user: dict, summary_only: bool = False):
+async def _export_purchase_for_date(start_date: Optional[_date], user: dict, summary_only: bool = False, end_date: Optional[_date] = None):
     """Internal: pull aggregate + build ZIP / JSON summary."""
     from app.db import pool
 
@@ -431,7 +488,7 @@ async def _export_purchase_for_date(target_date: _date, user: dict, summary_only
         item_rows = await conn.fetch(
             """
             SELECT
-                di.id, di.pallet_no, di.sku, di.qty, di.status, di.created_at,
+                di.id, di.business_date, di.pallet_no, di.sku, di.qty, di.status, di.created_at,
                 COALESCE(json_agg(json_build_object(
                     'part_code', dp.part_code,
                     'part_name', dp.part_name,
@@ -439,14 +496,13 @@ async def _export_purchase_for_date(target_date: _date, user: dict, summary_only
                 ) ORDER BY dp.id) FILTER (WHERE dp.id IS NOT NULL), '[]'::json) AS parts
             FROM defective_items di
             LEFT JOIN defective_parts dp ON dp.defective_id = di.id
-            WHERE di.status = 'PENDING' AND di.business_date = $1
+            WHERE di.status IN ('PENDING', 'READY')
             GROUP BY di.id
             ORDER BY di.id
             """,
-            target_date,
         )
         inventory_rows = await conn.fetch(
-            "SELECT part_code, on_hand_qty FROM inventory_snapshot"
+            ELIGIBLE_INVENTORY_SQL
         )
 
     items = []
@@ -461,19 +517,26 @@ async def _export_purchase_for_date(target_date: _date, user: dict, summary_only
         items.append(item)
 
     inventory_map = {r["part_code"]: int(r["on_hand_qty"] or 0) for r in inventory_rows}
-    agg = compute_purchase_rows(items, inventory_map)
+    agg = compute_purchase_rows(items, inventory_map, start_date, end_date)
+    target_date = start_date or end_date or today_in_business_tz()
+    label = purchase_range_label(start_date, end_date)
     summary = build_summary(agg, target_date)
+    summary.update({
+        "start_date": start_date.isoformat() if start_date else None,
+        "end_date": end_date.isoformat() if end_date else None,
+        "date_range": (start_date.isoformat() if start_date else "不限") + " 至 " + (end_date.isoformat() if end_date else "不限") if start_date or end_date else "全部业务日期",
+    })
 
     if summary_only:
         return JSONResponse(summary)
 
-    zip_bytes = build_purchase_zip(agg, target_date)
-    filename = f"采购配件-{target_date.isoformat()}.zip"
+    zip_bytes = build_purchase_zip(agg, target_date, date_label=label)
+    filename = f"采购配件-{label}.zip"
     # RFC 6266: ``filename*=UTF-8''<percent-encoded>`` for non-ASCII filenames.
     # Starlette encodes headers as latin-1 so we percent-encode the UTF-8 bytes
     # for the wire-format ``filename*`` parameter.
     from urllib.parse import quote
-    ascii_fallback = "purchase_parts-" + target_date.isoformat() + ".zip"
+    ascii_fallback = "purchase_parts-" + label + ".zip"
     filename_star = quote(filename, safe="")
     headers = {
         "Content-Disposition": (
