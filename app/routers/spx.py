@@ -190,11 +190,12 @@ async def resolve_location(conn, sku: str) -> Optional[str]:
 
 
 async def resolve_parts_sku_details(conn, sku: str) -> Optional[dict]:
-    """Return parts-inventory image/location, trying exact then base SKU."""
+    """Return stocked parts image/location, trying exact then base SKU."""
     row = await conn.fetchrow(
         """SELECT location, COALESCE(image_url, '') AS image_url
            FROM inventory_snapshot
            WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+             AND on_hand_qty > 0
            LIMIT 1""",
         sku,
     )
@@ -207,6 +208,7 @@ async def resolve_parts_sku_details(conn, sku: str) -> Optional[dict]:
             """SELECT location, COALESCE(image_url, '') AS image_url
                FROM inventory_snapshot
                WHERE UPPER(TRIM(part_code)) = UPPER(TRIM($1))
+                 AND on_hand_qty > 0
                LIMIT 1""",
             base,
         )
