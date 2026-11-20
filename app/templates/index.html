@@ -1393,14 +1393,14 @@
 
       <section id="pallet-pick" class="pallet-pick panel repair-only" :class="'pick-print-' + palletPrintMode" x-show="tab==='pallet-pick'" x-cloak>
         <h2 class="no-print">Pallet 工作台</h2>
-        <h2 class="print-only" x-text="palletPrintMode==='e' ? 'E 仓拣货单' : 'Pallet 产品清单'"></h2>
+        <h2 class="print-only" x-text="palletPrintMode==='e' ? '主仓拣货单' : 'Pallet 产品清单'"></h2>
         <button x-show="user && user.role==='repair'" class="btn no-print" @click="goTab('ready')">返回 READY</button>
         <div class="pick-toolbar no-print">
           <input x-model="palletPickNo" @input="onPalletPickInput()" @keydown.enter="loadPalletPick()" placeholder="输入 Pallet 编号" aria-label="Pallet 编号" />
           <button class="btn btn-primary" @click="loadPalletPick()" :disabled="palletPickBusy">查询</button>
           <button class="btn" x-show="palletPickNo || palletPickData" @click="clearPalletPick()">清空</button>
           <button class="btn" @click="printPalletPick('products')" :disabled="palletPickBusy || !palletPickData || !palletPickData.active_items.length">打印产品清单</button>
-          <button class="btn" @click="printPalletPick('e')" :disabled="palletPickBusy || !palletEPickLines.length">打印 E 仓拣货单</button>
+          <button class="btn" @click="printPalletPick('e')" :disabled="palletPickBusy || palletPickIncomplete || !palletEPickLines.length">打印主仓拣货单</button>
         </div>
         <p x-show="palletPickError" class="alert alert-warn no-print" x-text="palletPickError"></p>
         <div x-show="!palletPickData" class="no-print">
@@ -1439,7 +1439,7 @@
             <div class="pick-products">
               <div class="pick-section-head">
                 <h3>产品明细 · READY <span x-text="palletPickData.counts.READY"></span> / PENDING <span x-text="palletPickData.counts.PENDING"></span></h3>
-                <label class="pick-select-all no-print"><input type="checkbox" :checked="palletPickSelected.length === palletPickData.ready_items.length && palletPickSelected.length > 0" @change="setAllPalletPick($event.target.checked)" /><span>全选 READY（E 仓拣货）</span></label>
+                <label class="pick-select-all no-print"><input type="checkbox" :checked="palletPickSelected.length === palletPickData.ready_items.length && palletPickSelected.length > 0" @change="setAllPalletPick($event.target.checked)" /><span>全选 READY（主仓拣货）</span></label>
               </div>
               <div class="scroll-table"><table><thead><tr><th class="pick-select-col no-print">拣货</th><th>状态</th><th>SKU</th><th>所需配件 SKU</th><th>配件名字</th></tr></thead>
                 <tbody>
@@ -1455,13 +1455,14 @@
                 </tbody></table></div>
             </div>
             <div class="pick-parts">
-              <h3>E 仓拣货 · <span x-text="palletEPickLines.length"></span> 行</h3>
-              <p style="font-size:.82rem;">只列库存仓位以 E 开头的配件；按已选 READY 汇总。E 仓不足的数量不计入打印。</p>
-              <div class="scroll-table"><table><thead><tr><th>✓</th><th>配件 SKU</th><th>配件名字</th><th>E 仓位</th><th>拣货数量</th></tr></thead>
+              <h3>主仓拣货 · <span x-text="palletEPickLines.length"></span> 行</h3>
+              <p style="font-size:.82rem;">使用主仓 Bin+Pack 所有正库存仓位（不限 E）；按全局 READY 仓位分配及当前勾选数量汇总。</p>
+              <div class="scroll-table"><table><thead><tr><th>✓</th><th>配件 SKU</th><th>配件名字</th><th>配件库存仓位</th><th>拣货数量</th></tr></thead>
                 <tbody><template x-for="line in palletEPickLines" :key="line.part_code + ':' + line.location"><tr>
-                  <td data-label="勾选">□</td><td data-label="配件 SKU" x-text="line.part_code"></td><td data-label="配件名字" x-text="line.part_name || '—'"></td><td data-label="E 仓位" x-text="line.location"></td><td data-label="拣货数量"><b x-text="line.qty"></b></td>
+                  <td data-label="勾选">□</td><td data-label="配件 SKU" x-text="line.part_code"></td><td data-label="配件名字" x-text="line.part_name || '—'"></td><td data-label="配件库存仓位" x-text="line.location"></td><td data-label="拣货数量"><b x-text="line.qty"></b></td>
                 </tr></template></tbody></table></div>
-              <p x-show="!palletEPickLines.length">已选 READY 中，没有 E 仓可拣配件。</p>
+              <p x-show="palletPickIncomplete" class="alert alert-warn">当前 READY 的仓位库存不足或数据已变化，请核对后再打印；未完整分配时禁止打印。</p>
+              <p x-show="!palletEPickLines.length">已选 READY 中，没有可拣配件。</p>
             </div>
           </div>
         </template>
@@ -2681,27 +2682,32 @@ function app() {
       for (const item of this.palletPickData.ready_items) {
         if (!selected.has(item.id)) continue;
         for (const part of item.parts) {
-          if (!sums.has(part.part_code)) sums.set(part.part_code, {qty:0, item_ids:[]});
+          if (!sums.has(part.part_code)) sums.set(part.part_code, {qty:0, item_ids:[], locations:[], pick_missing:0});
           const row = sums.get(part.part_code);
           row.qty += Number(part.qty);
+          row.pick_missing += Number(part.pick_missing || 0);
+          for (const loc of (part.pick_locations || [])) {
+            const found = row.locations.find(x => x.location === loc.location);
+            if (found) found.qty += Number(loc.qty);
+            else row.locations.push({location:loc.location, qty:Number(loc.qty)});
+          }
           if (!row.item_ids.includes(item.id)) row.item_ids.push(item.id);
         }
       }
       return this.palletPickData.pick_parts.filter(p => sums.has(p.part_code)).map(p => ({...p, ...sums.get(p.part_code)}));
     },
+    get palletPickIncomplete() {
+      return this.palletPickParts.some(p => p.pick_missing > 0 || p.locations.reduce((s, l) => s + Number(l.qty), 0) !== p.qty);
+    },
     get palletEPickLines() {
+      // Retain the internal getter name for saved print mode compatibility.
+      // Use server-assigned per-item global picks; never invent/reuse stock.
       const lines = [];
       for (const part of this.palletPickParts) {
-        let remaining = part.qty;
-        const locations = (part.locations || []).filter(loc => /^E/i.test(String(loc.location || '').trim()) && Number(loc.qty) > 0);
-        if (!(part.locations || []).length && /^E/i.test(String(part.stock_location || '').trim()) && Number(part.stock_qty) > 0) {
-          locations.push({location: part.stock_location, qty: part.stock_qty});
-        }
-        for (const loc of locations) {
-          const qty = Math.min(remaining, Number(loc.qty));
-          if (qty > 0) lines.push({part_code: part.part_code, part_name: part.part_name, location: loc.location.trim(), qty});
-          remaining -= qty;
-          if (remaining <= 0) break;
+        for (const loc of part.locations) {
+          if (String(loc.location || '').trim() && Number(loc.qty) > 0) {
+            lines.push({part_code:part.part_code, part_name:part.part_name, location:loc.location.trim(), qty:Number(loc.qty)});
+          }
         }
       }
       return lines.sort((a, b) => a.location.localeCompare(b.location) || a.part_code.localeCompare(b.part_code));
@@ -2749,7 +2755,7 @@ function app() {
     },
     async printPalletPick(mode) {
       if (!this.palletPickData) return;
-      if (mode === 'e' && !this.palletEPickLines.length) return;
+      if (mode === 'e' && (this.palletPickIncomplete || !this.palletEPickLines.length)) return;
       if (mode === 'products' && !this.palletPickData.active_items.length) return;
       this.palletPickBusy = true;
       this.palletPickError = '';
@@ -2763,6 +2769,7 @@ function app() {
           return;
         }
         this.palletPickData = current;
+        if (mode === "e" && this.palletPickIncomplete) { this.palletPickError = "仓位未完整分配，已停止打印"; return; }
         this.palletPrintMode = mode;
         await this.$nextTick();
         window.print();

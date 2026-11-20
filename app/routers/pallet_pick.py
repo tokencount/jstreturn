@@ -7,10 +7,11 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import current_user
 from app.db import pool
-from app.matcher import _rebuild_plan_with_breakdown
+from app.picking import compute_location_pick_plan
 
 router = APIRouter(prefix="/api/pallet-pick", tags=["pallet-pick"])
 
@@ -18,7 +19,6 @@ router = APIRouter(prefix="/api/pallet-pick", tags=["pallet-pick"])
 @router.get("/_/ranked")
 async def ranked_pallets(user: dict = Depends(current_user)):
     """Top active pallets by READY / (READY + PENDING), excluding completed."""
-    await _rebuild_plan_with_breakdown()
     async with pool().acquire() as conn:
         rows = await conn.fetch(
             """
@@ -54,19 +54,36 @@ async def ranked_pallets(user: dict = Depends(current_user)):
     }
 
 
+@router.get("/_/all")
+async def all_pallet_pick_previews(user: dict = Depends(current_user)):
+    """All READY pallets from ONE read-only global allocation snapshot.
+
+    Shared with individual preview/print; useful for complete audits without
+    reloading and recomputing the same global inventory for every pallet.
+    """
+    rows, locations, plan = await _read_pick_snapshot(None)
+    pallets = sorted({r["pallet_no"] for r in rows if r["status"] == "READY"})
+    return {"pallets": [_pallet_response(p, rows, locations, plan) for p in pallets],
+            "allocation_scope": "single repeatable-read global snapshot"}
+
+
 @router.get("/{pallet_no}")
 async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)):
     pallet_no = pallet_no.strip()
     if not pallet_no or len(pallet_no) > 80:
         raise HTTPException(422, "invalid pallet number")
+    rows, locations, plan = await _read_pick_snapshot(pallet_no)
+    return _pallet_response(pallet_no, rows, locations, plan)
 
-    # Keep the same global reservation calculation as the READY screen.
-    await _rebuild_plan_with_breakdown()
+
+async def _read_pick_snapshot(pallet_no):
+    # A single read-only snapshot covers ALL active pallets, so independent
+    # pallet previews cannot allocate the same location capacity twice.
     async with pool().acquire() as conn:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             rows = await conn.fetch(
                 """
-                SELECT di.id, di.business_date, di.pallet_no, di.location,
+                SELECT di.id, di.business_date, di.pallet_no, di.location, di.created_at,
                        di.sku, di.product_name, di.qty, di.status,
                        dp.id AS part_id, dp.part_code, dp.part_name,
                        dp.qty AS part_qty, i.part_name AS stock_part_name,
@@ -75,20 +92,42 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
                 FROM defective_items di
                 LEFT JOIN defective_parts dp ON dp.defective_id = di.id
                 LEFT JOIN inventory_snapshot i ON i.part_code = dp.part_code
-                WHERE di.pallet_no = $1
+                WHERE di.pallet_no = $1 OR di.status IN ('READY', 'PENDING')
+                      OR ($1::text IS NULL AND di.status = 'COMPLETED')
                 ORDER BY di.id, dp.id
                 """, pallet_no,
             )
-            codes = sorted({r["part_code"] for r in rows if r["status"] == "READY" and r["part_code"]})
+            codes = sorted({r["part_code"] for r in rows if r["status"] in ("READY", "PENDING") and r["part_code"]})
             locations = await conn.fetch(
                 """
                 SELECT part_code, location, qty
                 FROM inventory_locations
-                WHERE part_code = ANY($1::text[]) AND qty > 0
+                WHERE part_code = ANY($1::text[])
                 ORDER BY part_code, qty DESC, location
                 """, codes,
             ) if codes else []
 
+    global_items = {}
+    snapshots = {}
+    for row in rows:
+        rid = row["id"]
+        if rid not in global_items:
+            global_items[rid] = {"id": rid, "pallet_no": row["pallet_no"],
+                                 "status": str(row["status"]),
+                                 "created_at": row.get("created_at"), "parts": []}
+        if row["part_id"] is not None:
+            code = row["part_code"]
+            global_items[rid]["parts"].append({"part_code": code, "qty": int(row["part_qty"])})
+            snapshots[code] = {"qty": int(row["stock_qty"] or 0), "location": row["stock_location"] or ""}
+    location_plan = await run_in_threadpool(compute_location_pick_plan, list(global_items.values()), snapshots, locations)
+    return rows, locations, location_plan
+
+
+def _pallet_response(pallet_no, rows, locations, location_plan):
+    # Duplicate part rows share one SKU reservation, sliced per original row.
+    unconsumed = {rid: {c: [dict(x) for x in ls] for c, ls in cs.items()}
+                  for rid, cs in location_plan["by_item"].items()}
+    rows = [r for r in rows if r["pallet_no"] == pallet_no]
     if not rows:
         raise HTTPException(404, "pallet not found")
     counts = Counter()
@@ -111,13 +150,23 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
             continue
         code = row["part_code"]
         qty = int(row["part_qty"])
-        items[rid]["parts"].append({"part_code": code, "part_name": row["part_name"] or row["stock_part_name"], "qty": qty})
+        part_picks = []
+        needed = qty
+        for loc in unconsumed.get(rid, {}).get(code, []):
+            take = min(needed, loc["qty"])
+            if take > 0:
+                part_picks.append({"location": loc["location"], "qty": take})
+                loc["qty"] -= take
+                needed -= take
+        items[rid]["parts"].append({"part_code": code, "part_name": row["part_name"] or row["stock_part_name"],
+                                     "qty": qty, "pick_locations": part_picks,
+                                     "pick_missing": needed if items[rid]["status"] == "READY" else 0})
         if items[rid]["status"] != "READY":
             continue
         if code not in pick:
             pick[code] = {
                 "part_code": code, "part_name": row["part_name"] or row["stock_part_name"],
-                "qty": 0, "item_ids": [], "locations": [],
+                "qty": 0, "item_ids": [], "locations": [], "allocated_locations": [],
                 "stock_location": row["stock_location"] or "",
                 "stock_qty": int(row["stock_qty"] or 0),
                 "stock_updated_at": row["stock_updated_at"].isoformat() if row["stock_updated_at"] else None,
@@ -127,7 +176,13 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
             pick[code]["item_ids"].append(rid)
 
     for row in locations:
-        pick[row["part_code"]]["locations"].append({"location": row["location"], "qty": int(row["qty"])})
+        if row["part_code"] in pick and int(row["qty"]) > 0:
+            pick[row["part_code"]]["locations"].append({"location": row["location"], "qty": int(row["qty"])})
+    for item in items.values():
+        if item is None or item["status"] != "READY":
+            continue
+        for part in item["parts"]:
+            pick[part["part_code"]]["allocated_locations"].extend(part["pick_locations"])
 
     ready = [item for item in items.values() if item is not None and item["status"] == "READY"]
     pending = [item for item in items.values() if item is not None and item["status"] == "PENDING"]
@@ -142,6 +197,8 @@ async def pallet_pick_preview(pallet_no: str, user: dict = Depends(current_user)
         "active_items": active,
         "pallet_locations": pallet_locations,
         "pick_parts": parts,
+        "allocation_shortages": {rid: issues for rid, issues in location_plan["shortages"].items() if rid in items},
+        "allocation_scope": "global persisted READY; imported Main Bin+Pack positive locations",
         "signature": signature,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

@@ -61,7 +61,7 @@ def test_whole_pallet_ready_pick_aggregates_and_excludes_pending():
         [{"part_code": "P-001", "location": "66-A-1", "qty": 20}],
     )
     with patch.object(pallet_pick, "pool", return_value=FakePool(conn)), patch.object(
-        pallet_pick, "_rebuild_plan_with_breakdown", new_callable=AsyncMock
+        pallet_pick, "compute_location_pick_plan", wraps=pallet_pick.compute_location_pick_plan
     ) as rebuild:
         response = client_for(conn).get("/api/pallet-pick/6601")
     assert response.status_code == 200
@@ -75,13 +75,13 @@ def test_whole_pallet_ready_pick_aggregates_and_excludes_pending():
     assert data["pick_parts"][0]["item_ids"] == [10, 11]
     assert data["pick_parts"][0]["locations"] == [{"location": "66-A-1", "qty": 20}]
     assert conn.queries[0][1] == ("6601",)
-    rebuild.assert_awaited_once()
+    rebuild.assert_called_once()
 
 
 def test_missing_pallet_is_404_and_signature_changes_with_qty():
     conn = FakeConn([], [])
     with patch.object(pallet_pick, "pool", return_value=FakePool(conn)), patch.object(
-        pallet_pick, "_rebuild_plan_with_breakdown", new_callable=AsyncMock
+        pallet_pick, "compute_location_pick_plan", wraps=pallet_pick.compute_location_pick_plan
     ):
         client = client_for(conn)
         assert client.get("/api/pallet-pick/unknown").status_code == 404
@@ -98,7 +98,7 @@ def test_ranked_pallets_excludes_completed_from_rate():
         "pending_count": 8, "completed_count": 10,
     }], [])
     with patch.object(pallet_pick, "pool", return_value=FakePool(conn)), patch.object(
-        pallet_pick, "_rebuild_plan_with_breakdown", new_callable=AsyncMock
+        pallet_pick, "compute_location_pick_plan", wraps=pallet_pick.compute_location_pick_plan
     ) as rebuild:
         response = client_for(conn).get("/api/pallet-pick/_/ranked")
     assert response.status_code == 200
@@ -114,4 +114,61 @@ def test_ranked_pallets_excludes_completed_from_rate():
     assert "WHERE ready_count > 0" in sql
     assert "ready_count::numeric / (ready_count + pending_count) DESC" in sql
     assert "oldest_date ASC, pallet_no ASC" in sql
-    rebuild.assert_awaited_once()
+    rebuild.assert_not_called()
+
+
+def test_independent_pallet_requests_share_global_location_capacity_and_are_readonly():
+    a = row(1, 'READY', 'P', 1, 1)
+    b = row(2, 'READY', 'P', 2, 2)
+    b['pallet_no'] = 'OTHER'
+    conn = FakeConn([a, b], [dict(part_code='P', location='E1', qty=1),
+                              dict(part_code='P', location='B1', qty=2)])
+    with patch.object(pallet_pick, 'pool', return_value=FakePool(conn)):
+        client = client_for(conn)
+        first = client.get('/api/pallet-pick/6601').json()
+        other = client.get('/api/pallet-pick/OTHER').json()
+        again = client.get('/api/pallet-pick/6601').json()
+    assert first['signature'] == again['signature']
+    totals = {}
+    for response in (first, other):
+        assert not response['allocation_shortages']
+        for item in response['ready_items']:
+            for part in item['parts']:
+                assert part['pick_missing'] == 0
+                assert sum(x['qty'] for x in part['pick_locations']) == part['qty']
+                for x in part['pick_locations']:
+                    totals[x['location']] = totals.get(x['location'], 0) + x['qty']
+    assert totals == {'E1': 1, 'B1': 2}
+    assert all(not any(word in sql.upper() for word in ('UPDATE ', 'INSERT ', 'DELETE ')) for sql,_ in conn.queries)
+    assert "OR di.status IN ('READY', 'PENDING')" in conn.queries[0][0]
+
+
+def test_duplicate_parts_slice_assignment_not_repeat_it_and_shortage_reported():
+    conn = FakeConn([row(1, 'READY', 'P', 1, 1), row(1, 'READY', 'P', 2, 2)],
+                    [dict(part_code='P', location='B', qty=3)])
+    with patch.object(pallet_pick, 'pool', return_value=FakePool(conn)):
+        data = client_for(conn).get('/api/pallet-pick/6601').json()
+        assert [sum(x['qty'] for x in p['pick_locations']) for p in data['ready_items'][0]['parts']] == [1, 2]
+        assert data['pick_parts'][0]['qty'] == 3
+        conn.locations = [dict(part_code='P', location='B', qty=1)]
+        short = client_for(conn).get('/api/pallet-pick/6601').json()
+        assert short['allocation_shortages'] == {'1': {'P': 2}}
+        assert sum(p['pick_missing'] for p in short['ready_items'][0]['parts']) == 3
+        assert short['signature'] != data['signature']
+
+
+def test_bulk_all_ready_pallets_matches_independent_preview_same_snapshot():
+    a = row(1, 'READY', 'P', 1, 1)
+    b = row(2, 'READY', 'P', 2, 2); b['pallet_no'] = 'OTHER'
+    conn = FakeConn([a,b], [dict(part_code='P',location='B',qty=3)])
+    with patch.object(pallet_pick,'pool',return_value=FakePool(conn)), patch.object(
+        pallet_pick,'compute_location_pick_plan',wraps=pallet_pick.compute_location_pick_plan
+    ) as compute:
+        client=client_for(conn)
+        bulk=client.get('/api/pallet-pick/_/all').json()
+        assert compute.call_count==1 and len(conn.queries)==2
+        assert {p['pallet_no'] for p in bulk['pallets']}=={'6601','OTHER'}
+        for p in bulk['pallets']:
+            single=client.get('/api/pallet-pick/'+p['pallet_no']).json()
+            assert p['signature']==single['signature']
+            assert p['ready_items']==single['ready_items']
