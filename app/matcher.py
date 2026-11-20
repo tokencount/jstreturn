@@ -16,22 +16,18 @@ from typing import Iterable, Mapping, Optional
 from app.db import pool
 
 
-# READY reservations can only be fulfilled from E locations. Keep the
-# snapshot's all-warehouse total for inventory reporting, not allocation.
-# Legacy snapshot-only rows qualify only when their recorded location is E.
+# Reservations and purchase shortages use all warehouse locations. Aggregate
+# child rows once per SKU, never add the snapshot total a second time.
+# Preserve the existing positive-quantity semantics: negative rows do not
+# cancel usable stock. Snapshot-only legacy SKUs use their clamped total.
 ELIGIBLE_INVENTORY_SQL = """
     SELECT s.part_code,
-           CASE WHEN loc.part_code IS NOT NULL THEN loc.e_qty
-                WHEN UPPER(LEFT(BTRIM(COALESCE(s.location, '')), 1)) = 'E'
-                THEN GREATEST(s.on_hand_qty, 0)
-                ELSE 0 END::int AS on_hand_qty
+           CASE WHEN loc.part_code IS NOT NULL THEN loc.total_qty
+                ELSE GREATEST(s.on_hand_qty, 0) END::int AS on_hand_qty
     FROM inventory_snapshot s
     LEFT JOIN (
         SELECT part_code,
-               COALESCE(SUM(qty) FILTER (
-                   WHERE UPPER(LEFT(BTRIM(COALESCE(location, '')), 1)) = 'E'
-                     AND qty > 0
-               ), 0)::int AS e_qty
+               COALESCE(SUM(qty) FILTER (WHERE qty > 0), 0)::int AS total_qty
         FROM inventory_locations
         GROUP BY part_code
     ) loc ON loc.part_code = s.part_code
@@ -221,7 +217,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
 
     For every part on every item we expose:
       need       - required qty from the defective_parts row
-      stock      - current on_hand_qty from inventory_snapshot
+      stock      - eligible all-warehouse quantity (legacy snapshot fallback)
       reserved   - qty reserved by other READY items in the global plan
       available  - max(stock - reserved, 0); what this item could still grab
       short      - max(need - available, 0); how many we are missing
@@ -251,7 +247,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
         plan_index, inventory_map = await _rebuild_plan_with_breakdown()
 
     sql = """
-        WITH e_stock AS (""" + ELIGIBLE_INVENTORY_SQL + """),
+        WITH eligible_stock AS (""" + ELIGIBLE_INVENTORY_SQL + """),
         parts_agg AS (
             SELECT
                 dp.defective_id,
@@ -263,7 +259,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
                     'short', GREATEST(dp.qty - COALESCE(i.on_hand_qty, 0), 0)
                 ) ORDER BY dp.id) AS parts
             FROM defective_parts dp
-            LEFT JOIN e_stock i ON i.part_code = dp.part_code
+            LEFT JOIN eligible_stock i ON i.part_code = dp.part_code
             GROUP BY dp.defective_id
         )
         SELECT
@@ -296,7 +292,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
     # Pre-fetch the per-(part_code, location) breakdown for every distinct
     # part_code that will appear in this page. ``inventory_locations`` may
     # have multiple rows per part_code (different warehouses); the UI shows
-    # the full list beside the part_code, while reservations use E stock only.
+    # the full list beside the part_code, while reservations use all warehouse stock.
     part_codes: set[str] = set()
     for row in rows:
         parts = row.get("parts")
@@ -325,7 +321,7 @@ async def list_with_parts(status_filter: Optional[str] = None, limit: int = 200,
             slot = per_part.get(p["part_code"]) or {}
             stock = int(p.get("have") or 0)
             if "stock" in slot and slot["stock"] != stock:
-                # Prefer the E-eligible value from the reservation plan.
+                # Prefer the eligible all-warehouse value from the reservation plan.
                 stock = int(slot["stock"])
             need = int(p.get("need") or 0)
             globally_reserved = int(slot.get("reserved") or 0)

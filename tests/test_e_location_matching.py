@@ -1,4 +1,4 @@
-"""Only E-location stock may make a defective item READY."""
+"""Shared eligible stock drives locked READY/PENDING updates."""
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -45,7 +45,7 @@ class Pool:
         yield self.conn
 
 
-def test_non_e_only_stock_cannot_keep_item_ready():
+def test_zero_stock_cannot_keep_item_ready():
     conn = Conn(eligible_qty=0)
     with patch.object(matcher, "pool", return_value=Pool(conn)):
         flips = asyncio.run(matcher.reevaluate_all_pending_ready())
@@ -53,7 +53,7 @@ def test_non_e_only_stock_cannot_keep_item_ready():
     assert conn.updates == [("PENDING", 1)]
 
 
-def test_e_stock_can_make_item_ready():
+def test_any_warehouse_stock_can_make_item_ready():
     conn = Conn(eligible_qty=1)
     with patch.object(matcher, "pool", return_value=Pool(conn)):
         flips = asyncio.run(matcher.reevaluate_all_pending_ready())
@@ -64,6 +64,7 @@ def test_e_stock_can_make_item_ready():
 def test_eligible_stock_query_uses_location_rows_before_snapshot_fallback():
     sql = matcher.ELIGIBLE_INVENTORY_SQL
     assert "FROM inventory_locations" in sql
-    assert "LEFT(BTRIM(COALESCE(location, '')), 1)) = 'E'" in sql
-    assert "WHEN loc.part_code IS NOT NULL THEN loc.e_qty" in sql
-    assert "LEFT(BTRIM(COALESCE(s.location, '')), 1)) = 'E'" in sql
+    assert "SUM(qty) FILTER (WHERE qty > 0)" in sql
+    assert "WHEN loc.part_code IS NOT NULL THEN loc.total_qty" in sql
+    assert "ELSE GREATEST(s.on_hand_qty, 0)" in sql
+    assert "= 'E'" not in sql
